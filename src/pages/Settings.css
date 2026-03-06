@@ -1,0 +1,351 @@
+/* Settings Sections */
+.settings-section {
+  margin-bottom: 32px;
+}
+
+.settings-section-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+}
+
+/* Settings Card */
+.settings-card {
+  background: var(--bg-white);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  padding: 8px 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 0 24px;
+}
+
+/* Settings Row */
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 24px;
+}
+
+.settings-row-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--bg-light);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.settings-row-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-row-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.settings-row-value {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Badges */
+.settings-plan-badge {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-status-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: #dcfce7;
+  color: #16a34a;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+/* Buttons */
+.settings-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--border-medium);
+  background: var(--bg-white);
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.settings-btn:hover {
+  background: var(--bg-light);
+  color: var(--text-primary);
+}
+
+.settings-btn--primary {
+  background: var(--brand-red);
+  color: white;
+  border-color: var(--brand-red);
+}
+
+.settings-btn--primary:hover {
+  background: var(--brand-red-hover);
+  border-color: var(--brand-red-hover);
+}
+
+.settings-btn--success {
+  background: #dcfce7;
+  color: #16a34a;
+  border-color: #bbf7d0;
+}
+
+.settings-btn--danger {
+  color: var(--brand-red);
+  border-color: var(--brand-red-light);
+  background: var(--brand-red-light);
+}
+
+.settings-btn--danger:hover {
+  background: #fde2e8;
+}
+
+.settings-btn--lg {
+  padding: 12px 24px;
+  font-size: 15px;
+  border-radius: 10px;
+}
+
+.settings-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Integrations */
+.settings-integrations {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-integration-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 24px;
+  background: var(--bg-white);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-integration-logo {
+  height: 28px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.settings-integration-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-integration-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-integration-status {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.settings-integration-status--connected {
+  color: #16a34a;
+  font-weight: 500;
+}
+
+/* Brand DNA */
+.settings-brand-dna-card {
+  padding: 32px;
+  text-align: center;
+}
+
+.settings-brand-dna-desc {
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin-bottom: 20px;
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.settings-brand-dna-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px 0;
+  margin-bottom: 16px;
+}
+
+.settings-brand-dna-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-brand-dna-count {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Upload Box */
+.settings-upload-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 24px 24px;
+  padding: 40px 24px;
+  border: 2px dashed var(--brand-red);
+  border-radius: 14px;
+  color: var(--brand-red);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.settings-upload-box:hover {
+  background: var(--brand-red-light);
+}
+
+.settings-upload-hint {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* Photo Grid */
+.settings-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 12px;
+  padding: 0 24px 24px;
+}
+
+.settings-photo-item {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+}
+
+.settings-photo-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.settings-photo-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.settings-photo-item:hover .settings-photo-remove {
+  opacity: 1;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .settings-row {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 14px 18px;
+  }
+
+  .settings-row .settings-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .settings-divider {
+    margin: 0 18px;
+  }
+
+  .settings-integration-card {
+    flex-wrap: wrap;
+    padding: 16px 18px;
+  }
+
+  .settings-integration-card .settings-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .settings-upload-box {
+    margin: 0 18px 18px;
+    padding: 32px 18px;
+  }
+
+  .settings-photo-grid {
+    padding: 0 18px 18px;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  }
+
+  .settings-brand-dna-header {
+    padding: 16px 18px 0;
+  }
+
+  .settings-brand-dna-card {
+    padding: 24px 18px;
+  }
+
+  .settings-photo-remove {
+    opacity: 1;
+  }
+}

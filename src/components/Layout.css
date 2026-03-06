@@ -1,0 +1,48 @@
+.layout {
+  min-height: 100vh;
+}
+
+.layout-main {
+  margin-left: var(--sidebar-width);
+  min-height: 100vh;
+  background: var(--bg-white);
+  overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+  .layout-main {
+    margin-left: 0;
+    padding-bottom: var(--bottombar-height);
+    padding-top: 48px; /* space for credit pill */
+  }
+
+  .layout-main.slide-in-left {
+    animation: slideFromRight 0.3s ease-out;
+  }
+
+  .layout-main.slide-in-right {
+    animation: slideFromLeft 0.3s ease-out;
+  }
+}
+
+@keyframes slideFromRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideFromLeft {
+  from {
+    transform: translateX(-100%);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

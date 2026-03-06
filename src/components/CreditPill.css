@@ -1,0 +1,28 @@
+/* Only show on mobile */
+.credit-pill {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .credit-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 100;
+    background: var(--bg-white);
+    color: var(--brand-red);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 50px;
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border-light);
+  }
+
+  .credit-pill svg {
+    flex-shrink: 0;
+  }
+}

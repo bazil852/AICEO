@@ -1,0 +1,236 @@
+import { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import './LoginScreen.css';
+
+export default function LoginScreen() {
+  const { login, signup } = useAuth();
+  const [mode, setMode] = useState('login'); // 'login' | 'signup'
+  const [signupStep, setSignupStep] = useState('choose'); // 'choose' | 'self-serve' | 'coached'
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    login(email);
+  };
+
+  const handleSignup = (plan) => {
+    signup(email || 'user@example.com', plan);
+  };
+
+  const resetToLogin = () => {
+    setMode('login');
+    setSignupStep('choose');
+    setEmail('');
+    setPassword('');
+    setName('');
+  };
+
+  const resetToSignup = () => {
+    setMode('signup');
+    setSignupStep('choose');
+  };
+
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <div className="login-logo">
+          <img src="/logo.png" alt="PuerlyPersonal" />
+          <span className="login-logo-text">AI CEO</span>
+        </div>
+
+        {mode === 'login' && (
+          <>
+            <p className="login-subtext">Sign in to your AI CEO dashboard</p>
+            <form className="login-form" onSubmit={handleLogin}>
+              <div className="form-group">
+                <label htmlFor="email">Email</label>
+                <input
+                  id="email"
+                  type="email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="password">Password</label>
+                <input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+              <button type="submit" className="btn-primary">
+                Sign In
+              </button>
+            </form>
+            <p className="login-switch">
+              Don't have an account?{' '}
+              <button className="link-btn" onClick={resetToSignup}>
+                Sign Up
+              </button>
+            </p>
+          </>
+        )}
+
+        {mode === 'signup' && signupStep === 'choose' && (
+          <>
+            <h2 className="login-heading">Get Started</h2>
+            <p className="login-subtext">
+              Choose how you'd like to set up your AI CEO
+            </p>
+            <div className="signup-options">
+              <button
+                className="option-card"
+                onClick={() => setSignupStep('self-serve')}
+              >
+                <div className="option-badge">Self-Serve</div>
+                <h3>Set Up on Your Own</h3>
+                <p>
+                  Get instant access to the platform and configure your AI CEO
+                  at your own pace.
+                </p>
+                <span className="option-cta">View Plans →</span>
+              </button>
+              <button
+                className="option-card option-card--premium"
+                onClick={() => setSignupStep('coached')}
+              >
+                <div className="option-badge option-badge--premium">
+                  Coached Onboarding
+                </div>
+                <h3>Private 1-on-1 Setup</h3>
+                <p>
+                  Get on a private call with Marko or Danny for complete
+                  guidance setting up your AI CEO for maximum revenue.
+                </p>
+                <span className="option-cta">Learn More →</span>
+              </button>
+            </div>
+            <p className="login-switch">
+              Already have an account?{' '}
+              <button className="link-btn" onClick={resetToLogin}>
+                Sign In
+              </button>
+            </p>
+          </>
+        )}
+
+        {mode === 'signup' && signupStep === 'self-serve' && (
+          <>
+            <button
+              className="back-btn"
+              onClick={() => setSignupStep('choose')}
+            >
+              ← Back
+            </button>
+            <h2 className="login-heading">Choose Your Plan</h2>
+            <p className="login-subtext">
+              Select the plan that fits your business
+            </p>
+            <div className="plan-cards">
+              <div className="plan-card">
+                <div className="plan-name">Starter</div>
+                <div className="plan-price">
+                  <span className="price-amount">$97</span>
+                  <span className="price-period">/month</span>
+                </div>
+                <ul className="plan-features">
+                  <li>Access to AI CEO platform</li>
+                  <li>Content generation</li>
+                  <li>Marketing automation</li>
+                  <li>Basic analytics</li>
+                </ul>
+                <button
+                  className="btn-primary btn-plan"
+                  onClick={() => handleSignup('Starter')}
+                >
+                  Get Started
+                </button>
+              </div>
+              <div className="plan-card plan-card--featured">
+                <div className="plan-popular">Most Popular</div>
+                <div className="plan-name">Growth</div>
+                <div className="plan-price">
+                  <span className="price-amount">$297</span>
+                  <span className="price-period">/month</span>
+                </div>
+                <ul className="plan-features">
+                  <li>Everything in Starter</li>
+                  <li>Advanced sales tools</li>
+                  <li>Priority support</li>
+                  <li>Unlimited content credits</li>
+                </ul>
+                <button
+                  className="btn-primary btn-plan"
+                  onClick={() => handleSignup('Growth')}
+                >
+                  Get Started
+                </button>
+              </div>
+            </div>
+            <p className="login-switch">
+              Already have an account?{' '}
+              <button className="link-btn" onClick={resetToLogin}>
+                Sign In
+              </button>
+            </p>
+          </>
+        )}
+
+        {mode === 'signup' && signupStep === 'coached' && (
+          <>
+            <button
+              className="back-btn"
+              onClick={() => setSignupStep('choose')}
+            >
+              ← Back
+            </button>
+            <h2 className="login-heading">Coached Onboarding</h2>
+            <p className="login-subtext">
+              Get your AI CEO set up by the experts
+            </p>
+            <div className="coached-card">
+              <div className="coached-price">
+                <span className="price-amount">$5,987</span>
+                <span className="price-label">one-time</span>
+              </div>
+              <div className="coached-details">
+                <h3>Private 1-on-1 Setup Call</h3>
+                <p>
+                  Get on a private one-on-one call with either <strong>Marko</strong> or{' '}
+                  <strong>Danny</strong> to get complete guidance setting up your
+                  PuerlyPersonal AI CEO to generate maximum revenue for your
+                  business.
+                </p>
+                <ul className="coached-includes">
+                  <li>Full platform access (Growth plan included)</li>
+                  <li>Private setup call with Marko or Danny</li>
+                  <li>Custom AI CEO configuration for your business</li>
+                  <li>Revenue-maximizing strategy session</li>
+                  <li>Priority ongoing support</li>
+                </ul>
+              </div>
+              <button
+                className="btn-primary btn-coached"
+                onClick={() => handleSignup('Coached')}
+              >
+                Purchase and book the call
+              </button>
+            </div>
+            <p className="login-switch">
+              Already have an account?{' '}
+              <button className="link-btn" onClick={resetToLogin}>
+                Sign In
+              </button>
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

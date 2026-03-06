@@ -1,0 +1,495 @@
+.aiceo-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh);
+  overflow: hidden;
+}
+
+/* Hero state (no messages) — logo + starters + input, vertically centered */
+.aiceo-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  width: 100%;
+  overflow-y: auto;
+  padding: 20px 0;
+}
+
+.aiceo-hero-logo {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  border-radius: 20px;
+  opacity: 1;
+  flex-shrink: 0;
+}
+
+/* Conversation Starters */
+.aiceo-starters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+  max-width: 660px;
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+
+.aiceo-starter {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--bg-white);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, color 0.15s;
+}
+
+.aiceo-starter:hover {
+  border-color: var(--brand-red);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 3px rgba(233, 26, 68, 0.06);
+}
+
+.aiceo-starter-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: contain;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* Messages */
+.aiceo-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.aiceo-bubble {
+  max-width: 80%;
+  padding: 14px 18px;
+  border-radius: 18px;
+  font-size: 15px;
+  line-height: 1.55;
+  word-break: break-word;
+  flex-shrink: 0;
+}
+
+.aiceo-bubble--user {
+  align-self: flex-end;
+  background: var(--brand-red);
+  color: white;
+  border-bottom-right-radius: 6px;
+}
+
+.aiceo-bubble--user .aiceo-user-text {
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.aiceo-bubble--assistant {
+  align-self: flex-start;
+  background: #1e1f21;
+  color: white;
+  border-bottom-left-radius: 6px;
+}
+
+.aiceo-thinking {
+  align-self: flex-start;
+  padding: 6px 4px;
+  flex-shrink: 0;
+}
+
+.aiceo-thinking-text {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.aiceo-dots span {
+  opacity: 0;
+  animation: dotFade 1.2s infinite;
+}
+
+.aiceo-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.aiceo-dots span:nth-child(2) {
+  animation-delay: 0.3s;
+}
+
+.aiceo-dots span:nth-child(3) {
+  animation-delay: 0.6s;
+}
+
+@keyframes dotFade {
+  0%, 20% { opacity: 0; }
+  40%, 100% { opacity: 1; }
+}
+
+.aiceo-spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Markdown inside assistant bubbles */
+.aiceo-markdown {
+  font-size: 15px;
+  line-height: 1.6;
+  color: white;
+}
+
+.aiceo-markdown p {
+  margin: 0 0 12px;
+}
+
+.aiceo-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.aiceo-markdown h1,
+.aiceo-markdown h2,
+.aiceo-markdown h3,
+.aiceo-markdown h4 {
+  font-weight: 700;
+  color: white;
+  margin: 16px 0 8px;
+}
+
+.aiceo-markdown h1:first-child,
+.aiceo-markdown h2:first-child,
+.aiceo-markdown h3:first-child {
+  margin-top: 0;
+}
+
+.aiceo-markdown h1 { font-size: 20px; }
+.aiceo-markdown h2 { font-size: 17px; }
+.aiceo-markdown h3 { font-size: 15px; }
+
+.aiceo-markdown strong {
+  font-weight: 700;
+  color: white;
+}
+
+.aiceo-markdown em {
+  font-style: italic;
+}
+
+.aiceo-markdown ul,
+.aiceo-markdown ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.aiceo-markdown li {
+  margin: 4px 0;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.aiceo-markdown li::marker {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.aiceo-markdown a {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+.aiceo-markdown blockquote {
+  border-left: 3px solid rgba(255, 255, 255, 0.3);
+  padding-left: 14px;
+  margin: 10px 0;
+  color: rgba(255, 255, 255, 0.85);
+  font-style: normal;
+}
+
+.aiceo-markdown code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #93c5fd;
+}
+
+.aiceo-markdown pre {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  padding: 14px;
+  margin: 10px 0;
+  overflow-x: auto;
+}
+
+.aiceo-markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.aiceo-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 12px -18px;
+  padding: 0 18px;
+}
+
+.aiceo-markdown table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.aiceo-markdown th,
+.aiceo-markdown td {
+  white-space: nowrap;
+  padding: 8px 12px;
+}
+
+@media (min-width: 769px) {
+  .aiceo-markdown th,
+  .aiceo-markdown td {
+    max-width: 200px;
+    white-space: normal;
+    word-wrap: break-word;
+  }
+}
+
+.aiceo-markdown th {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+  font-weight: 700;
+  color: white;
+}
+
+.aiceo-markdown td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.aiceo-markdown tr:last-child td {
+  border-bottom: none;
+}
+
+.aiceo-markdown hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  margin: 16px 0;
+}
+
+/* Input area */
+.aiceo-input-area {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 24px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.aiceo-input-area--bottom {
+  padding: 16px 24px 24px;
+}
+
+/* Glow */
+.aiceo-input-glow {
+  position: absolute;
+  top: -12px;
+  bottom: -12px;
+  left: 0;
+  right: 0;
+  border-radius: 32px;
+  background: radial-gradient(ellipse at center, rgba(233, 26, 68, 0.12) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.aiceo-input-wrapper {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+  max-width: 660px;
+  background: var(--bg-white);
+  border: 2px solid var(--border-light);
+  border-radius: 24px;
+  padding: 14px 14px 14px 22px;
+  box-shadow: 0 4px 24px rgba(233, 26, 68, 0.08), var(--shadow-md);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.aiceo-input-wrapper:focus-within {
+  border-color: var(--brand-red);
+  box-shadow: 0 4px 32px rgba(233, 26, 68, 0.14), var(--shadow-md);
+}
+
+.aiceo-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: transparent;
+  resize: none;
+  min-height: 67px;
+  max-height: 160px;
+  padding: 4px 0;
+}
+
+.aiceo-input-area--bottom .aiceo-input {
+  min-height: 24px;
+}
+
+.aiceo-input-area--bottom .aiceo-input::placeholder {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.aiceo-input::placeholder {
+  color: var(--text-muted);
+}
+
+.aiceo-input-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.aiceo-voice-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: none;
+  background: var(--bg-light);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.aiceo-voice-btn:hover {
+  background: var(--border-light);
+  color: var(--text-primary);
+}
+
+.aiceo-voice-btn--active {
+  background: var(--brand-red-light);
+  color: var(--brand-red);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.aiceo-send-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: none;
+  background: var(--brand-red);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.aiceo-send-btn:hover:not(:disabled) {
+  background: var(--brand-red-hover);
+}
+
+.aiceo-send-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.aiceo-send-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.aiceo-stop-btn {
+  background: #000;
+}
+
+.aiceo-stop-btn:hover {
+  background: #222;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .aiceo-page {
+    height: calc(100vh - var(--bottombar-height) - 48px);
+  }
+
+  .aiceo-hero {
+    gap: 18px;
+    padding: 12px 0;
+  }
+
+  .aiceo-hero-logo {
+    width: 56px;
+    height: 56px;
+  }
+
+  .aiceo-messages {
+    padding: 52px 16px 12px;
+  }
+
+  .aiceo-input-area {
+    padding: 0 16px;
+  }
+
+  .aiceo-input-area--bottom {
+    padding: 12px 16px 16px;
+  }
+
+  .aiceo-bubble {
+    max-width: 88%;
+  }
+
+  .aiceo-starters {
+    grid-template-columns: 1fr;
+    padding: 0 16px;
+  }
+
+  .aiceo-input {
+    min-height: 45px;
+    font-size: 16px;
+  }
+}
