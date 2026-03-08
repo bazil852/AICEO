@@ -62,6 +62,205 @@
   text-align: center;
 }
 
+.inbox-folder-badge--muted {
+  background: var(--text-muted);
+}
+
+/* ── Sidebar Accounts ── */
+.inbox-sidebar-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 12px 8px;
+}
+
+.inbox-accounts-section {
+  padding: 0 6px;
+}
+
+.inbox-accounts-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 8px;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.inbox-account-row {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  transition: background 0.12s;
+}
+
+.inbox-account-row:hover {
+  background: var(--bg-light);
+}
+
+.inbox-account-row--active {
+  background: var(--brand-red-light);
+}
+
+.inbox-account-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  min-width: 0;
+  font-family: inherit;
+}
+
+.inbox-account-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.inbox-account-email {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inbox-account-remove {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+  margin-right: 4px;
+}
+
+.inbox-account-row:hover .inbox-account-remove {
+  opacity: 1;
+}
+
+.inbox-account-remove:hover {
+  color: var(--brand-red);
+}
+
+.inbox-add-account-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 8px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  font-family: inherit;
+  margin-top: 2px;
+}
+
+.inbox-add-account-btn:hover {
+  background: var(--bg-light);
+  color: var(--text-primary);
+}
+
+/* ── Sync button ── */
+.inbox-sync-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.inbox-sync-btn:hover {
+  background: var(--bg-light);
+  color: var(--text-primary);
+}
+
+.inbox-sync-btn--spinning svg {
+  animation: inbox-spin 1s linear infinite;
+}
+
+@keyframes inbox-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ── Loading & Empty states ── */
+.inbox-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.inbox-spinner {
+  animation: inbox-spin 1s linear infinite;
+}
+
+.inbox-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.inbox-empty-state p {
+  margin: 0;
+}
+
+.inbox-empty-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--brand-red);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 4px;
+}
+
+.inbox-empty-btn:hover {
+  background: var(--brand-red-hover);
+}
+
 /* ── Email List ── */
 .inbox-list {
   width: 340px;
@@ -337,6 +536,7 @@
   gap: 10px;
   padding: 16px 24px;
   border-top: 1px solid var(--border-light);
+  align-items: flex-end;
 }
 
 .inbox-reply-input {
@@ -350,6 +550,10 @@
   color: var(--text-primary);
   outline: none;
   transition: border-color 0.2s, background 0.2s;
+  resize: none;
+  min-height: 38px;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 .inbox-reply-input:focus {
@@ -369,12 +573,19 @@
   border-radius: 10px;
   font-size: 13px;
   font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
   transition: background 0.15s;
+  flex-shrink: 0;
 }
 
 .inbox-reply-btn:hover {
   background: var(--brand-red-hover);
+}
+
+.inbox-reply-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ── Compose FAB ── */
@@ -443,6 +654,31 @@
   margin: 0;
 }
 
+.inbox-compose-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inbox-compose-save-draft {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.inbox-compose-save-draft:hover {
+  background: var(--bg-light);
+  color: var(--text-primary);
+}
+
 .inbox-compose-close {
   width: 32px;
   height: 32px;
@@ -460,6 +696,12 @@
 .inbox-compose-close:hover {
   background: var(--bg-light);
   color: var(--text-primary);
+}
+
+/* ── Compose select (From dropdown) ── */
+.inbox-compose-select {
+  appearance: none;
+  cursor: pointer;
 }
 
 /* ── Compose Fields ── */
@@ -926,6 +1168,104 @@
   background: var(--brand-red-hover);
 }
 
+.inbox-compose-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Toast ── */
+.inbox-toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: #1a1a2e;
+  color: #fff;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 999;
+  animation: inbox-toast-in 0.2s ease-out;
+}
+
+.inbox-toast--error {
+  background: #dc2626;
+}
+
+@keyframes inbox-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── Add Account Modal ── */
+.inbox-account-modal {
+  max-width: 440px;
+}
+
+.inbox-account-modal-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--brand-red-light);
+  color: var(--brand-red);
+  margin: 0 auto 16px;
+}
+
+.inbox-account-modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: center;
+  margin: 0 0 6px;
+}
+
+.inbox-account-modal-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+
+.inbox-account-modal-error {
+  padding: 10px 14px;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 13px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border: 1px solid #fecaca;
+}
+
+.inbox-account-modal-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.modal-field-row {
+  display: flex;
+  gap: 12px;
+}
+
+.modal-field-row .modal-field {
+  flex: 1;
+}
+
+.modal-field--sm {
+  max-width: 100px;
+}
+
 /* ── Responsive ── */
 @media (max-width: 900px) {
   .inbox-page {
@@ -946,6 +1286,14 @@
     flex-wrap: wrap;
     padding: 12px;
     gap: 4px;
+  }
+
+  .inbox-sidebar-divider {
+    display: none;
+  }
+
+  .inbox-accounts-section {
+    display: none;
   }
 
   .inbox-list {

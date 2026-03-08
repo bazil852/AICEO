@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLocation } from 'react-router-dom';
-import { Mail, Lock, CreditCard, Zap, Check, X, Copy, Upload, Trash2, ChevronRight, FileText } from 'lucide-react';
+import { Mail, Lock, CreditCard, Zap, Check, X, Copy, Upload, Trash2, ChevronRight, FileText, Loader } from 'lucide-react';
 import ColorWheelPicker from '../components/ColorWheelPicker';
 import FontSelector from '../components/FontSelector';
+import { uploadBrandDnaFiles, uploadContextFiles, getIntegrations, connectIntegration, disconnectIntegration, getEmailAccounts } from '../lib/api';
+import { supabase } from '../lib/supabase';
 import './Pages.css';
 import './Settings.css';
 
@@ -15,9 +17,6 @@ const NOTE_TAKERS = [
   { id: 'gohighlevel', name: 'GoHighLevel', logo: '/gohighlevel-logo.png' },
   { id: 'email', name: 'Email (SMTP/IMAP)', logo: '/smtp-logo.png', large: true },
 ];
-
-const MOCK_WEBHOOK_URL = 'https://api.puerlypersonal.com/webhooks/fireflies/abc123';
-const MOCK_WEBHOOK_SECRET = 'whsec_k7x9Qm2pLnR4vT8wZ1yB3dF6';
 
 const DOC_TYPES = [
   { id: 'icp', label: 'ICP Document', desc: 'Your Ideal Customer Profile' },
@@ -31,14 +30,19 @@ const DOC_TYPES = [
 export default function Settings() {
   const { user, credits } = useAuth();
   const [passwordReset, setPasswordReset] = useState(false);
-  const [integrations, setIntegrations] = useState({ fireflies: false, fathom: false, stripe: false, whop: false, gohighlevel: false, email: false });
-  const [modalOpen, setModalOpen] = useState(null); // 'fireflies' or 'fathom'
+  const [integrations, setIntegrations] = useState({});
+  const [integrationsLoading, setIntegrationsLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(null);
   const [apiKey, setApiKey] = useState('');
   const [firefliesStep, setFirefliesStep] = useState(1);
   const [copiedField, setCopiedField] = useState(null);
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState(null);
+  const [firefliesWebhook, setFirefliesWebhook] = useState({ url: '', secret: '' });
 
   // Brand DNA
   const [brandDnaCreated, setBrandDnaCreated] = useState(false);
+  const [brandDnaLoading, setBrandDnaLoading] = useState(true);
   const [photos, setPhotos] = useState([]);
   const [documents, setDocuments] = useState({});
   const [brandColors, setBrandColors] = useState({ primary: '', text: '', secondary: '' });
@@ -50,6 +54,8 @@ export default function Settings() {
   const logoInputRef = useRef(null);
   const docInputRefs = useRef({});
   const brandDnaRef = useRef(null);
+  const initialLoadDone = useRef(false);
+  const saveTimer = useRef(null);
   const location = useLocation();
 
   // Scroll to Brand DNA when navigated from Content page
@@ -63,6 +69,92 @@ export default function Settings() {
     }
   }, [location.state]);
 
+  // Load Brand DNA from DB
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session?.user) { setBrandDnaLoading(false); return; }
+      const { data } = await supabase
+        .from('brand_dna')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .single();
+      if (data) {
+        setBrandDnaCreated(true);
+        if (data.photo_urls?.length) {
+          setPhotos(data.photo_urls.map((url, i) => ({ id: `db-photo-${i}`, url })));
+        }
+        if (data.logo_url) setLogo({ url: data.logo_url });
+        if (data.colors && Object.keys(data.colors).length) {
+          setBrandColors(prev => ({ ...prev, ...data.colors }));
+        }
+        if (data.main_font) setMainFont(data.main_font);
+        if (data.secondary_font) setSecondaryFont(data.secondary_font);
+        if (data.documents && Object.keys(data.documents).length) {
+          const docs = {};
+          for (const [key, val] of Object.entries(data.documents)) {
+            docs[key] = { name: val.name, url: val.url, extractedText: val.extracted_text };
+          }
+          setDocuments(docs);
+        }
+      }
+      setBrandDnaLoading(false);
+      setTimeout(() => { initialLoadDone.current = true; }, 500);
+    });
+  }, []);
+
+  // Load integrations from DB
+  useEffect(() => {
+    async function load() {
+      try {
+        const [intResult, emailResult] = await Promise.all([
+          getIntegrations(),
+          getEmailAccounts(),
+        ]);
+        const map = {};
+        for (const int of (intResult.integrations || [])) {
+          map[int.provider] = int;
+        }
+        if (emailResult.accounts?.length > 0) {
+          map.email = { is_active: true, provider: 'email' };
+        }
+        setIntegrations(map);
+      } catch {
+        // Silently fail
+      } finally {
+        setIntegrationsLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  // Auto-save Brand DNA to DB when state changes
+  useEffect(() => {
+    if (!initialLoadDone.current || !brandDnaCreated) return;
+    if (photos.some(p => p.uploading)) return;
+    if (logo?.uploading) return;
+    if (Object.values(documents).some(d => d?.uploading)) return;
+
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+      await supabase.from('brand_dna').update({
+        photo_urls: photos.map(p => p.url).filter(Boolean),
+        logo_url: logo?.url || null,
+        colors: brandColors,
+        main_font: mainFont || null,
+        secondary_font: secondaryFont || null,
+        documents: Object.fromEntries(
+          Object.entries(documents)
+            .filter(([, v]) => v && v.url)
+            .map(([k, v]) => [k, { name: v.name, url: v.url, extracted_text: v.extractedText || '' }])
+        ),
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', session.user.id);
+    }, 1000);
+    return () => clearTimeout(saveTimer.current);
+  }, [brandDnaCreated, photos, logo, documents, brandColors, mainFont, secondaryFont]);
+
   const handleResetPassword = () => {
     setPasswordReset(true);
     setTimeout(() => setPasswordReset(false), 3000);
@@ -72,25 +164,59 @@ export default function Settings() {
     setApiKey('');
     setFirefliesStep(1);
     setCopiedField(null);
+    setConnectError(null);
+    setConnecting(false);
+    setFirefliesWebhook({ url: '', secret: '' });
     setModalOpen(id);
   };
 
-  const handleConnect = () => {
-    if (modalOpen) {
-      setIntegrations((prev) => ({ ...prev, [modalOpen]: true }));
+  const handleConnect = async () => {
+    if (!modalOpen || !apiKey.trim()) return;
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const result = await connectIntegration(modalOpen, apiKey);
+      setIntegrations((prev) => ({ ...prev, [modalOpen]: result.integration }));
+      setModalOpen(null);
+      setApiKey('');
+      setFirefliesStep(1);
+    } catch (err) {
+      setConnectError(err.message);
+    } finally {
+      setConnecting(false);
     }
-    setModalOpen(null);
-    setApiKey('');
-    setFirefliesStep(1);
   };
 
-  const handleDisconnect = (id) => {
-    setIntegrations((prev) => ({ ...prev, [id]: false }));
+  const handleDisconnect = async (id) => {
+    try {
+      await disconnectIntegration(id);
+      setIntegrations((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch {
+      // Silently fail
+    }
   };
 
-  const handleFirefliesNext = () => {
+  const handleFirefliesNext = async () => {
     if (!apiKey.trim()) return;
-    setFirefliesStep(2);
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const result = await connectIntegration('fireflies', apiKey);
+      setIntegrations((prev) => ({ ...prev, fireflies: result.integration }));
+      setFirefliesWebhook({
+        url: result.integration.webhook_url || '',
+        secret: result.integration.webhook_secret || '',
+      });
+      setFirefliesStep(2);
+    } catch (err) {
+      setConnectError(err.message);
+    } finally {
+      setConnecting(false);
+    }
   };
 
   const copyToClipboard = (text, field) => {
@@ -99,45 +225,86 @@ export default function Settings() {
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const handlePhotoUpload = (e) => {
+  const handlePhotoUpload = async (e) => {
     const files = Array.from(e.target.files);
     const remaining = 6 - photos.length;
     const toAdd = files.slice(0, remaining);
-    const newPhotos = toAdd.map((file) => ({
-      id: `photo-${Date.now()}-${Math.random()}`,
-      file,
-      url: URL.createObjectURL(file),
-    }));
-    setPhotos((prev) => [...prev, ...newPhotos]);
+    if (!toAdd.length) return;
     e.target.value = '';
+
+    const placeholders = toAdd.map((file, i) => ({
+      id: `photo-${Date.now()}-${i}`,
+      localUrl: URL.createObjectURL(file),
+      uploading: true,
+    }));
+    setPhotos(prev => [...prev, ...placeholders]);
+
+    try {
+      const result = await uploadBrandDnaFiles(toAdd);
+      const uploadedUrls = result.files.filter(f => f.type !== 'error').map(f => f.url);
+      placeholders.forEach(p => URL.revokeObjectURL(p.localUrl));
+      setPhotos(prev => {
+        const existing = prev.filter(p => !p.uploading);
+        const newOnes = uploadedUrls.map((url, i) => ({ id: `photo-done-${Date.now()}-${i}`, url }));
+        return [...existing, ...newOnes];
+      });
+    } catch {
+      placeholders.forEach(p => URL.revokeObjectURL(p.localUrl));
+      setPhotos(prev => prev.filter(p => !p.uploading));
+    }
   };
 
   const removePhoto = (id) => {
-    setPhotos((prev) => {
-      const photo = prev.find((p) => p.id === id);
-      if (photo) URL.revokeObjectURL(photo.url);
-      return prev.filter((p) => p.id !== id);
+    setPhotos(prev => {
+      const photo = prev.find(p => p.id === id);
+      if (photo?.localUrl) URL.revokeObjectURL(photo.localUrl);
+      return prev.filter(p => p.id !== id);
     });
   };
 
-  const handleLogoUpload = (e) => {
+  const handleLogoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (logo) URL.revokeObjectURL(logo.url);
-    setLogo({ file, url: URL.createObjectURL(file) });
     e.target.value = '';
+    if (logo?.localUrl) URL.revokeObjectURL(logo.localUrl);
+    setLogo({ localUrl: URL.createObjectURL(file), uploading: true });
+
+    try {
+      const result = await uploadBrandDnaFiles([file]);
+      const uploaded = result.files.find(f => f.type !== 'error');
+      if (!uploaded) throw new Error('Upload failed');
+      setLogo({ url: uploaded.url });
+    } catch {
+      setLogo(null);
+    }
   };
 
   const removeLogo = () => {
-    if (logo) URL.revokeObjectURL(logo.url);
+    if (logo?.localUrl) URL.revokeObjectURL(logo.localUrl);
     setLogo(null);
   };
 
-  const handleDocUpload = (docId, e) => {
+  const handleDocUpload = async (docId, e) => {
     const file = e.target.files[0];
     if (!file) return;
-    setDocuments((prev) => ({ ...prev, [docId]: { name: file.name, file } }));
     e.target.value = '';
+    setDocuments(prev => ({ ...prev, [docId]: { name: file.name, uploading: true } }));
+
+    try {
+      const result = await uploadContextFiles([file]);
+      const uploaded = result.files[0];
+      if (uploaded.type === 'error') throw new Error(uploaded.error);
+      setDocuments(prev => ({
+        ...prev,
+        [docId]: { name: file.name, url: uploaded.url, extractedText: uploaded.extractedText || '' },
+      }));
+    } catch {
+      setDocuments(prev => {
+        const next = { ...prev };
+        delete next[docId];
+        return next;
+      });
+    }
   };
 
   const removeDoc = (docId) => {
@@ -148,8 +315,18 @@ export default function Settings() {
     });
   };
 
-  const handleCreateBrandDna = () => {
+  const handleCreateBrandDna = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+    await supabase.from('brand_dna').upsert({
+      user_id: session.user.id,
+      photo_urls: [],
+      video_urls: [],
+      documents: {},
+      colors: {},
+    }, { onConflict: 'user_id' });
     setBrandDnaCreated(true);
+    initialLoadDone.current = true;
   };
 
   const currentModal = modalOpen ? NOTE_TAKERS.find((n) => n.id === modalOpen) : null;
@@ -230,17 +407,31 @@ export default function Settings() {
       {/* Integrations Section */}
       <div className="settings-section">
         <h2 className="settings-section-title">Integrations</h2>
+        {integrationsLoading ? (
+          <div className="settings-integrations">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} className="settings-integration-card">
+                <div className="skeleton" style={{ width: 40, height: 40, borderRadius: 10 }} />
+                <div className="settings-integration-info">
+                  <div className="skeleton" style={{ width: 100, height: 14, marginBottom: 6 }} />
+                  <div className="skeleton" style={{ width: 70, height: 12 }} />
+                </div>
+                <div className="skeleton" style={{ width: 80, height: 34, borderRadius: 8 }} />
+              </div>
+            ))}
+          </div>
+        ) : (
         <div className="settings-integrations">
           {NOTE_TAKERS.map((nt) => (
             <div key={nt.id} className="settings-integration-card">
               <img src={nt.logo} alt={nt.name} className={`settings-integration-logo ${nt.large ? 'settings-integration-logo--lg' : ''}`} />
               <div className="settings-integration-info">
                 <span className="settings-integration-name">{nt.name}</span>
-                <span className={`settings-integration-status ${integrations[nt.id] ? 'settings-integration-status--connected' : ''}`}>
-                  {integrations[nt.id] ? 'Connected' : 'Not connected'}
+                <span className={`settings-integration-status ${integrations[nt.id]?.is_active ? 'settings-integration-status--connected' : ''}`}>
+                  {integrations[nt.id]?.is_active ? 'Connected' : 'Not connected'}
                 </span>
               </div>
-              {integrations[nt.id] ? (
+              {integrations[nt.id]?.is_active ? (
                 <button
                   className="settings-btn settings-btn--danger"
                   onClick={() => handleDisconnect(nt.id)}
@@ -258,6 +449,7 @@ export default function Settings() {
             </div>
           ))}
         </div>
+        )}
       </div>
 
       {/* Brand DNA Section */}
@@ -303,7 +495,12 @@ export default function Settings() {
                 <div className="settings-photo-grid">
                   {photos.map((photo) => (
                     <div key={photo.id} className="settings-photo-item">
-                      <img src={photo.url} alt="" />
+                      <img src={photo.url || photo.localUrl} alt="" />
+                      {photo.uploading && (
+                        <div className="settings-photo-uploading">
+                          <Loader size={18} className="settings-spinner" />
+                        </div>
+                      )}
                       <button
                         className="settings-photo-remove"
                         onClick={() => removePhoto(photo.id)}
@@ -324,14 +521,18 @@ export default function Settings() {
 
               {logo ? (
                 <div className="settings-logo-uploaded">
-                  <img src={logo.url} alt="Logo" className="settings-logo-preview" />
-                  <button
-                    className="settings-btn settings-btn--danger"
-                    onClick={removeLogo}
-                  >
-                    <Trash2 size={14} />
-                    Remove
-                  </button>
+                  <img src={logo.url || logo.localUrl} alt="Logo" className="settings-logo-preview" />
+                  {logo.uploading ? (
+                    <Loader size={18} className="settings-spinner" />
+                  ) : (
+                    <button
+                      className="settings-btn settings-btn--danger"
+                      onClick={removeLogo}
+                    >
+                      <Trash2 size={14} />
+                      Remove
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div
@@ -362,16 +563,22 @@ export default function Settings() {
                 {documents[doc.id] ? (
                   <div className="settings-doc-uploaded">
                     <div className="settings-doc-file">
-                      <FileText size={20} />
+                      {documents[doc.id].uploading ? (
+                        <Loader size={20} className="settings-spinner" />
+                      ) : (
+                        <FileText size={20} />
+                      )}
                       <span className="settings-doc-filename">{documents[doc.id].name}</span>
                     </div>
-                    <button
-                      className="settings-btn settings-btn--danger"
-                      onClick={() => removeDoc(doc.id)}
-                    >
-                      <Trash2 size={14} />
-                      Remove
-                    </button>
+                    {!documents[doc.id].uploading && (
+                      <button
+                        className="settings-btn settings-btn--danger"
+                        onClick={() => removeDoc(doc.id)}
+                      >
+                        <Trash2 size={14} />
+                        Remove
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div
@@ -445,12 +652,13 @@ export default function Settings() {
                     onChange={(e) => setApiKey(e.target.value)}
                   />
                 </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
                 <button
                   className="modal-btn modal-btn--primary"
-                  disabled={!apiKey.trim()}
+                  disabled={!apiKey.trim() || connecting}
                   onClick={handleConnect}
                 >
-                  Connect
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Connecting...</> : 'Connect'}
                 </button>
               </>
             )}
@@ -471,12 +679,13 @@ export default function Settings() {
                     onChange={(e) => setApiKey(e.target.value)}
                   />
                 </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
                 <button
                   className="modal-btn modal-btn--primary"
-                  disabled={!apiKey.trim()}
+                  disabled={!apiKey.trim() || connecting}
                   onClick={handleFirefliesNext}
                 >
-                  Next
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Validating...</> : 'Next'}
                 </button>
               </>
             )}
@@ -491,12 +700,12 @@ export default function Settings() {
                     <input
                       type="text"
                       className="modal-input modal-input--readonly"
-                      value={MOCK_WEBHOOK_URL}
+                      value={firefliesWebhook.url}
                       readOnly
                     />
                     <button
                       className="modal-copy-btn"
-                      onClick={() => copyToClipboard(MOCK_WEBHOOK_URL, 'url')}
+                      onClick={() => copyToClipboard(firefliesWebhook.url, 'url')}
                     >
                       {copiedField === 'url' ? <Check size={16} /> : <Copy size={16} />}
                     </button>
@@ -508,12 +717,12 @@ export default function Settings() {
                     <input
                       type="text"
                       className="modal-input modal-input--readonly"
-                      value={MOCK_WEBHOOK_SECRET}
+                      value={firefliesWebhook.secret}
                       readOnly
                     />
                     <button
                       className="modal-copy-btn"
-                      onClick={() => copyToClipboard(MOCK_WEBHOOK_SECRET, 'secret')}
+                      onClick={() => copyToClipboard(firefliesWebhook.secret, 'secret')}
                     >
                       {copiedField === 'secret' ? <Check size={16} /> : <Copy size={16} />}
                     </button>
@@ -521,9 +730,9 @@ export default function Settings() {
                 </div>
                 <button
                   className="modal-btn modal-btn--primary"
-                  onClick={handleConnect}
+                  onClick={() => setModalOpen(null)}
                 >
-                  Connect
+                  Done
                 </button>
               </>
             )}
@@ -544,12 +753,13 @@ export default function Settings() {
                     onChange={(e) => setApiKey(e.target.value)}
                   />
                 </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
                 <button
                   className="modal-btn modal-btn--primary"
-                  disabled={!apiKey.trim()}
+                  disabled={!apiKey.trim() || connecting}
                   onClick={handleConnect}
                 >
-                  Connect
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Connecting...</> : 'Connect'}
                 </button>
               </>
             )}
@@ -570,12 +780,13 @@ export default function Settings() {
                     onChange={(e) => setApiKey(e.target.value)}
                   />
                 </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
                 <button
                   className="modal-btn modal-btn--primary"
-                  disabled={!apiKey.trim()}
+                  disabled={!apiKey.trim() || connecting}
                   onClick={handleConnect}
                 >
-                  Connect
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Connecting...</> : 'Connect'}
                 </button>
               </>
             )}
@@ -594,12 +805,13 @@ export default function Settings() {
                     onChange={(e) => setApiKey(e.target.value)}
                   />
                 </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
                 <button
                   className="modal-btn modal-btn--primary"
-                  disabled={!apiKey.trim()}
+                  disabled={!apiKey.trim() || connecting}
                   onClick={handleConnect}
                 >
-                  Connect
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Connecting...</> : 'Connect'}
                 </button>
               </>
             )}

@@ -1,0 +1,314 @@
+import { Router } from 'express';
+import { supabase } from '../services/storage.js';
+
+const router = Router();
+
+// ─── Get revenue chart data ───
+// Returns aggregated revenue from Stripe, Whop, and manual sales
+router.get('/api/sales/revenue', async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.json({ data: [], totals: {} });
+
+  const { view = 'Month' } = req.query;
+
+  // Get all payment data from integrations
+  const { data: payments } = await supabase
+    .from('integration_data')
+    .select('provider, data_type, title, metadata, synced_at')
+    .eq('user_id', userId)
+    .eq('data_type', 'payment')
+    .order('synced_at', { ascending: true });
+
+  // Get manual sales
+  const { data: manualSales } = await supabase
+    .from('manual_sales')
+    .select('*')
+    .eq('user_id', userId)
+    .order('sold_at', { ascending: true });
+
+  // Build time buckets based on view
+  const now = new Date();
+  let buckets, dateFormat;
+
+  if (view === 'Week') {
+    // Last 7 days
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    buckets = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      buckets.push({ label: days[d.getDay()], date: d, stripe: 0, whop: 0, platform: 0 });
+    }
+    dateFormat = (ts) => {
+      const d = new Date(ts * 1000 || ts);
+      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    };
+  } else if (view === 'Month') {
+    // Last 12 months
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    buckets = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      buckets.push({ label: months[d.getMonth()], date: d, stripe: 0, whop: 0, platform: 0 });
+    }
+    dateFormat = (ts) => {
+      const d = new Date(ts * 1000 || ts);
+      return `${d.getFullYear()}-${d.getMonth()}`;
+    };
+  } else {
+    // Last 6 years
+    buckets = [];
+    for (let i = 5; i >= 0; i--) {
+      const year = now.getFullYear() - i;
+      buckets.push({ label: String(year), date: new Date(year, 0, 1), stripe: 0, whop: 0, platform: 0 });
+    }
+    dateFormat = (ts) => {
+      const d = new Date(ts * 1000 || ts);
+      return String(d.getFullYear());
+    };
+  }
+
+  // Helper to find bucket
+  const findBucket = (timestamp) => {
+    const d = new Date(typeof timestamp === 'number' && timestamp < 1e12 ? timestamp * 1000 : timestamp);
+    if (view === 'Week') {
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      return buckets.find(b => {
+        const bd = b.date;
+        return `${bd.getFullYear()}-${bd.getMonth()}-${bd.getDate()}` === key;
+      });
+    } else if (view === 'Month') {
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      return buckets.find(b => `${b.date.getFullYear()}-${b.date.getMonth()}` === key);
+    } else {
+      return buckets.find(b => b.label === String(d.getFullYear()));
+    }
+  };
+
+  // Aggregate payments into buckets
+  for (const p of (payments || [])) {
+    const amount = (p.metadata?.amount || 0) / 100; // cents to dollars
+    const ts = p.metadata?.created || p.synced_at;
+    const bucket = findBucket(ts);
+    if (bucket) {
+      if (p.provider === 'stripe') bucket.stripe += amount;
+      else if (p.provider === 'whop') bucket.whop += amount;
+    }
+  }
+
+  // Aggregate manual sales
+  for (const s of (manualSales || [])) {
+    const amount = (s.amount || 0) / 100;
+    const bucket = findBucket(s.sold_at);
+    if (bucket) bucket.platform += amount;
+  }
+
+  // Round values
+  const chartData = buckets.map(b => ({
+    label: b.label,
+    stripe: Math.round(b.stripe),
+    whop: Math.round(b.whop),
+    platform: Math.round(b.platform),
+  }));
+
+  // Totals
+  const totals = {
+    stripe: Math.round(buckets.reduce((s, b) => s + b.stripe, 0)),
+    whop: Math.round(buckets.reduce((s, b) => s + b.whop, 0)),
+    platform: Math.round(buckets.reduce((s, b) => s + b.platform, 0)),
+  };
+
+  res.json({ data: chartData, totals });
+});
+
+// ─── Get Stripe stats summary ───
+router.get('/api/sales/stats', async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.json({ stats: {} });
+
+  const { data: payments } = await supabase
+    .from('integration_data')
+    .select('provider, data_type, metadata')
+    .eq('user_id', userId)
+    .in('data_type', ['payment', 'subscription', 'customer']);
+
+  const stats = {
+    totalRevenue: 0,
+    activeSubscriptions: 0,
+    totalCustomers: 0,
+    recentPayments: 0,
+  };
+
+  for (const p of (payments || [])) {
+    if (p.data_type === 'payment' && p.metadata?.status === 'succeeded') {
+      stats.totalRevenue += (p.metadata.amount || 0) / 100;
+      stats.recentPayments++;
+    }
+    if (p.data_type === 'subscription') stats.activeSubscriptions++;
+    if (p.data_type === 'customer') stats.totalCustomers++;
+  }
+
+  stats.totalRevenue = Math.round(stats.totalRevenue);
+  res.json({ stats });
+});
+
+// ─── Get calls (transcripts from fireflies/fathom) ───
+router.get('/api/sales/calls', async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.json({ calls: [] });
+
+  const { data: transcripts } = await supabase
+    .from('integration_data')
+    .select('id, provider, title, content, metadata, synced_at')
+    .eq('user_id', userId)
+    .eq('data_type', 'transcript')
+    .order('synced_at', { ascending: false })
+    .limit(50);
+
+  // Get call metadata (type, status)
+  const ids = (transcripts || []).map(t => t.id);
+  let metadataMap = {};
+  if (ids.length > 0) {
+    const { data: meta } = await supabase
+      .from('call_metadata')
+      .select('*')
+      .eq('user_id', userId)
+      .in('integration_data_id', ids);
+    for (const m of (meta || [])) {
+      metadataMap[m.integration_data_id] = m;
+    }
+  }
+
+  const calls = (transcripts || []).map(t => ({
+    id: t.id,
+    name: t.title,
+    date: t.metadata?.date || t.synced_at,
+    summary: t.metadata?.summary || (t.content ? t.content.slice(0, 200) : ''),
+    recorder: t.provider,
+    callType: metadataMap[t.id]?.call_type || 'Other',
+    status: metadataMap[t.id]?.status || null,
+  }));
+
+  res.json({ calls });
+});
+
+// ─── Update call metadata ───
+router.patch('/api/sales/calls/:id', async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.status(401).json({ error: 'Auth required' });
+
+  const { call_type, status } = req.body;
+
+  const { data, error } = await supabase
+    .from('call_metadata')
+    .upsert({
+      user_id: userId,
+      integration_data_id: req.params.id,
+      call_type: call_type || 'Other',
+      status: status || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,integration_data_id' })
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ metadata: data });
+});
+
+// ─── Get products (from Whop + manual) ───
+router.get('/api/sales/products', async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.json({ products: [] });
+
+  // Whop products
+  const { data: whopProducts } = await supabase
+    .from('integration_data')
+    .select('id, title, metadata')
+    .eq('user_id', userId)
+    .eq('provider', 'whop')
+    .eq('data_type', 'product');
+
+  // Get unique product names from manual sales
+  const { data: manualProducts } = await supabase
+    .from('manual_sales')
+    .select('product_name')
+    .eq('user_id', userId);
+
+  const productSet = new Set();
+  const products = [{ id: 'all', name: 'All Products' }];
+
+  for (const wp of (whopProducts || [])) {
+    if (!productSet.has(wp.title)) {
+      productSet.add(wp.title);
+      products.push({ id: wp.id, name: wp.title, source: 'whop' });
+    }
+  }
+
+  for (const ms of (manualProducts || [])) {
+    if (!productSet.has(ms.product_name)) {
+      productSet.add(ms.product_name);
+      products.push({ id: `manual-${ms.product_name}`, name: ms.product_name, source: 'manual' });
+    }
+  }
+
+  res.json({ products });
+});
+
+// ─── Add manual sale ───
+router.post('/api/sales', async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.status(401).json({ error: 'Auth required' });
+
+  const { product_name, buyer_name, amount } = req.body;
+  if (!product_name || !amount) {
+    return res.status(400).json({ error: 'product_name and amount are required' });
+  }
+
+  const { data, error } = await supabase.from('manual_sales').insert({
+    user_id: userId,
+    product_name,
+    buyer_name: buyer_name || '',
+    amount: Math.round(parseFloat(amount) * 100), // dollars to cents
+    sold_at: new Date().toISOString(),
+  }).select().single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ sale: data });
+});
+
+// ─── Trigger re-sync of integration data ───
+router.post('/api/sales/sync', async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.status(401).json({ error: 'Auth required' });
+
+  // Import dynamically to avoid circular deps
+  const { default: integrationRoutes } = await import('./integrations.js');
+
+  // Get connected integrations
+  const { data: integrations } = await supabase
+    .from('integrations')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_active', true);
+
+  const results = {};
+  for (const int of (integrations || [])) {
+    try {
+      let service;
+      if (int.provider === 'stripe') service = (await import('../services/integrations/stripe-int.js'));
+      else if (int.provider === 'whop') service = (await import('../services/integrations/whop.js'));
+      else if (int.provider === 'fireflies') service = (await import('../services/integrations/fireflies.js'));
+      else if (int.provider === 'fathom') service = (await import('../services/integrations/fathom.js'));
+      else continue;
+
+      const result = await service.sync({ ...int, user_id: userId });
+      results[int.provider] = result;
+    } catch (err) {
+      results[int.provider] = { error: err.message };
+    }
+  }
+
+  res.json({ results });
+});
+
+export default router;

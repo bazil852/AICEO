@@ -610,6 +610,27 @@
   margin-top: 8px;
 }
 
+.sales-calls-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.sales-calls-header .sales-section-title {
+  margin-bottom: 0;
+}
+
+.sales-empty-calls {
+  background: var(--bg-white);
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
 .sales-section-title {
   font-size: 20px;
   font-weight: 700;

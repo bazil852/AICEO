@@ -521,3 +521,10 @@
   opacity: 0.4;
   cursor: default;
 }
+
+.modal-error {
+  color: #dc2626;
+  font-size: 13px;
+  margin: -8px 0 12px;
+  line-height: 1.4;
+}

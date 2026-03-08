@@ -9,14 +9,34 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    login(email);
+    setError('');
+    setSubmitting(true);
+    try {
+      await login(email, password);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleSignup = (plan) => {
-    signup(email || 'user@example.com', plan);
+  const handleSignup = async (plan) => {
+    setError('');
+    setSubmitting(true);
+    try {
+      await signup(email, password, plan, name);
+      setConfirmEmail(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const resetToLogin = () => {
@@ -25,12 +45,36 @@ export default function LoginScreen() {
     setEmail('');
     setPassword('');
     setName('');
+    setError('');
+    setConfirmEmail(false);
   };
 
   const resetToSignup = () => {
     setMode('signup');
     setSignupStep('choose');
+    setError('');
+    setConfirmEmail(false);
   };
+
+  if (confirmEmail) {
+    return (
+      <div className="login-screen">
+        <div className="login-card">
+          <div className="login-logo">
+            <img src="/logo.png" alt="PuerlyPersonal" />
+            <span className="login-logo-text">AI CEO</span>
+          </div>
+          <h2 className="login-heading">Check Your Email</h2>
+          <p className="login-subtext">
+            We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account, then sign in.
+          </p>
+          <button className="btn-primary" onClick={resetToLogin}>
+            Back to Sign In
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="login-screen">
@@ -39,6 +83,8 @@ export default function LoginScreen() {
           <img src="/logo.png" alt="PuerlyPersonal" />
           <span className="login-logo-text">AI CEO</span>
         </div>
+
+        {error && <div className="login-error">{error}</div>}
 
         {mode === 'login' && (
           <>
@@ -52,6 +98,7 @@ export default function LoginScreen() {
                   placeholder="you@company.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  required
                 />
               </div>
               <div className="form-group">
@@ -62,10 +109,11 @@ export default function LoginScreen() {
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  required
                 />
               </div>
-              <button type="submit" className="btn-primary">
-                Sign In
+              <button type="submit" className="btn-primary" disabled={submitting}>
+                {submitting ? 'Signing in...' : 'Sign In'}
               </button>
             </form>
             <p className="login-switch">
@@ -130,8 +178,46 @@ export default function LoginScreen() {
             </button>
             <h2 className="login-heading">Choose Your Plan</h2>
             <p className="login-subtext">
-              Select the plan that fits your business
+              Create your account, then select a plan
             </p>
+
+            <div className="signup-fields">
+              <div className="form-group">
+                <label htmlFor="signup-name">Full Name</label>
+                <input
+                  id="signup-name"
+                  type="text"
+                  placeholder="Your full name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="signup-email">Email</label>
+                <input
+                  id="signup-email"
+                  type="email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="signup-password">Password</label>
+                <input
+                  id="signup-password"
+                  type="password"
+                  placeholder="Min 6 characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                />
+              </div>
+            </div>
+
             <div className="plan-cards">
               <div className="plan-card">
                 <div className="plan-name">Starter</div>
@@ -148,8 +234,9 @@ export default function LoginScreen() {
                 <button
                   className="btn-primary btn-plan"
                   onClick={() => handleSignup('Starter')}
+                  disabled={submitting || !email || !password}
                 >
-                  Get Started
+                  {submitting ? 'Creating...' : 'Get Started'}
                 </button>
               </div>
               <div className="plan-card plan-card--featured">
@@ -168,8 +255,9 @@ export default function LoginScreen() {
                 <button
                   className="btn-primary btn-plan"
                   onClick={() => handleSignup('Growth')}
+                  disabled={submitting || !email || !password}
                 >
-                  Get Started
+                  {submitting ? 'Creating...' : 'Get Started'}
                 </button>
               </div>
             </div>
@@ -194,6 +282,44 @@ export default function LoginScreen() {
             <p className="login-subtext">
               Get your AI CEO set up by the experts
             </p>
+
+            <div className="signup-fields">
+              <div className="form-group">
+                <label htmlFor="coached-name">Full Name</label>
+                <input
+                  id="coached-name"
+                  type="text"
+                  placeholder="Your full name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="coached-email">Email</label>
+                <input
+                  id="coached-email"
+                  type="email"
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="coached-password">Password</label>
+                <input
+                  id="coached-password"
+                  type="password"
+                  placeholder="Min 6 characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                />
+              </div>
+            </div>
+
             <div className="coached-card">
               <div className="coached-price">
                 <span className="price-amount">$5,987</span>
@@ -218,8 +344,9 @@ export default function LoginScreen() {
               <button
                 className="btn-primary btn-coached"
                 onClick={() => handleSignup('Coached')}
+                disabled={submitting || !email || !password}
               >
-                Purchase and book the call
+                {submitting ? 'Creating...' : 'Purchase and book the call'}
               </button>
             </div>
             <p className="login-switch">

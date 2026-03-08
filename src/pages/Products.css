@@ -488,6 +488,128 @@
   cursor: not-allowed;
 }
 
+/* ── Payment Link ── */
+.products-payment-link {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+}
+
+.products-payment-link-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #16a34a;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 8px;
+}
+
+.products-payment-link-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.products-payment-link-url {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.products-copy-btn,
+.products-regen-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-white);
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.products-copy-btn:hover,
+.products-regen-btn:hover {
+  background: #dcfce7;
+  color: #16a34a;
+  border-color: #86efac;
+}
+
+.products-copy-btn--copied {
+  background: #dcfce7;
+  color: #16a34a;
+  border-color: #86efac;
+}
+
+/* ── Empty State ── */
+.products-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.products-empty h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 16px 0 8px;
+}
+
+.products-empty p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+  max-width: 360px;
+}
+
+/* ── Error Banner ── */
+.products-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  color: #dc2626;
+}
+
+.products-error button {
+  background: none;
+  border: none;
+  color: #dc2626;
+  cursor: pointer;
+  padding: 2px;
+}
+
+/* ── Spinner ── */
+@keyframes products-spin {
+  to { transform: rotate(360deg); }
+}
+
+.products-spin {
+  animation: products-spin 0.6s linear infinite;
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .products-grid {

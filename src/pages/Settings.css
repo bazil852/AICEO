@@ -316,6 +316,25 @@
   opacity: 1;
 }
 
+.settings-photo-uploading {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  border-radius: inherit;
+}
+
+.settings-spinner {
+  animation: settingsSpin 1s linear infinite;
+}
+
+@keyframes settingsSpin {
+  to { transform: rotate(360deg); }
+}
+
 /* Brand DNA Grid */
 .settings-brand-dna-grid {
   display: grid;

@@ -1,0 +1,648 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import Busboy from 'busboy';
+import crypto from 'crypto';
+import { uploadFile, saveAnalysis, supabase } from './services/storage.js';
+import { extractText } from './services/documents.js';
+import { transcribe, isMediaFile } from './services/video.js';
+import { extractFromUrl } from './services/social.js';
+import { resolveChannel, fetchRecentVideos, calculateOutliers } from './services/youtube.js';
+import * as tiktokService from './services/tiktok.js';
+import * as instagramService from './services/instagram.js';
+import emailRoutes from './routes/email.js';
+import integrationRoutes from './routes/integrations.js';
+import webhookRoutes from './routes/webhooks.js';
+import salesRoutes from './routes/sales.js';
+import productRoutes from './routes/products.js';
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+app.use(cors({
+  origin: true,
+  credentials: true,
+}));
+
+// Raw body for Stripe webhooks (before express.json)
+app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
+
+app.use(express.json());
+
+// Request logging
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  next();
+});
+
+// Auth middleware — verifies the Supabase JWT from the frontend
+async function requireAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token || token === 'undefined') {
+    console.log('[auth] No token provided — allowing unauthenticated request');
+    req.user = { id: 'anonymous' };
+    return next();
+  }
+
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) {
+    console.log('[auth] Invalid token:', error?.message);
+    req.user = { id: 'anonymous' };
+    return next();
+  }
+
+  req.user = user;
+  next();
+}
+
+// Health check
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
+// ─── Get saved content items for user ───
+app.get('/api/content-items', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.json({ items: [] });
+
+  const { data, error } = await supabase
+    .from('content_items')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ items: data });
+});
+
+// ─── Delete a content item ───
+app.delete('/api/content-items/:id', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.status(401).json({ error: 'Auth required' });
+
+  const { error } = await supabase
+    .from('content_items')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('user_id', userId);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// ─── Upload & Process endpoint ───
+// Accepts multipart/form-data with one or more files
+// Returns analysis results for each file
+app.post('/api/upload', requireAuth, (req, res) => {
+  const userId = req.user.id;
+  const results = [];
+  const filePromises = [];
+
+  const busboy = Busboy({
+    headers: req.headers,
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB per file
+  });
+
+  busboy.on('file', (fieldname, stream, info) => {
+    const { filename, mimeType } = info;
+    const chunks = [];
+
+    stream.on('data', (chunk) => chunks.push(chunk));
+
+    const done = new Promise(async (resolve) => {
+      stream.on('end', async () => {
+        try {
+          const buffer = Buffer.concat(chunks);
+          const uniqueName = `${userId}/${crypto.randomUUID()}-${filename}`;
+
+          // Determine bucket and processing type
+          let bucket, type, analysis;
+
+          if (mimeType.startsWith('image/')) {
+            bucket = 'content-context';
+            type = 'photo';
+            const stored = await uploadFile(bucket, uniqueName, buffer, mimeType);
+            analysis = { type, filename, url: stored.url };
+
+            // Persist to DB
+            if (userId !== 'anonymous') {
+              const { data: saved } = await supabase.from('content_items').insert({
+                user_id: userId, type: 'photo', filename,
+                url: stored.url, storage_url: stored.url,
+              }).select('id').single();
+              if (saved) analysis.dbId = saved.id;
+            }
+          } else if (isMediaFile(filename)) {
+            bucket = 'content-context';
+            type = 'video';
+            const stored = await uploadFile(bucket, uniqueName, buffer, mimeType);
+            const transcript = await transcribe(buffer, filename);
+            analysis = {
+              type, filename, url: stored.url,
+              transcript: transcript.text, duration: transcript.duration,
+              language: transcript.language, segments: transcript.segments,
+            };
+
+            if (userId !== 'anonymous') {
+              const { data: saved } = await supabase.from('content_items').insert({
+                user_id: userId, type: 'document', filename,
+                url: stored.url, storage_url: stored.url,
+                transcript: transcript.text,
+                metadata: { duration: transcript.duration, language: transcript.language },
+              }).select('id').single();
+              if (saved) analysis.dbId = saved.id;
+            }
+          } else {
+            bucket = 'content-context';
+            type = 'document';
+            const stored = await uploadFile(bucket, uniqueName, buffer, mimeType);
+            const text = await extractText(buffer, filename);
+            analysis = {
+              type, filename, url: stored.url,
+              extractedText: text, charCount: text.length,
+            };
+
+            if (userId !== 'anonymous') {
+              const { data: saved } = await supabase.from('content_items').insert({
+                user_id: userId, type: 'document', filename,
+                url: stored.url, storage_url: stored.url,
+                extracted_text: text,
+              }).select('id').single();
+              if (saved) analysis.dbId = saved.id;
+            }
+          }
+
+          results.push(analysis);
+        } catch (err) {
+          results.push({
+            type: 'error',
+            filename,
+            error: err.message,
+          });
+        }
+        resolve();
+      });
+    });
+
+    filePromises.push(done);
+  });
+
+  busboy.on('finish', async () => {
+    await Promise.all(filePromises);
+    res.json({ files: results });
+  });
+
+  busboy.on('error', (err) => {
+    res.status(500).json({ error: err.message });
+  });
+
+  req.pipe(busboy);
+});
+
+// ─── Upload for Brand DNA ───
+app.post('/api/brand-dna/upload', requireAuth, (req, res) => {
+  const userId = req.user.id;
+  const results = [];
+  const filePromises = [];
+
+  const busboy = Busboy({
+    headers: req.headers,
+    limits: { fileSize: 100 * 1024 * 1024 }, // 100MB for videos
+  });
+
+  busboy.on('file', (fieldname, stream, info) => {
+    const { filename, mimeType } = info;
+    const chunks = [];
+
+    stream.on('data', (chunk) => chunks.push(chunk));
+
+    const done = new Promise(async (resolve) => {
+      stream.on('end', async () => {
+        try {
+          const buffer = Buffer.concat(chunks);
+          const uniqueName = `${userId}/${crypto.randomUUID()}-${filename}`;
+
+          let bucket, type;
+
+          if (mimeType.startsWith('image/')) {
+            bucket = 'brand-dna';
+            type = 'photo';
+          } else if (mimeType.startsWith('video/') || isMediaFile(filename)) {
+            bucket = 'brand-dna-videos';
+            type = 'video';
+          } else {
+            results.push({ type: 'error', filename, error: 'Unsupported file type for Brand DNA' });
+            resolve();
+            return;
+          }
+
+          const stored = await uploadFile(bucket, uniqueName, buffer, mimeType);
+          results.push({ type, filename, url: stored.url, path: stored.path });
+        } catch (err) {
+          results.push({ type: 'error', filename, error: err.message });
+        }
+        resolve();
+      });
+    });
+
+    filePromises.push(done);
+  });
+
+  busboy.on('finish', async () => {
+    await Promise.all(filePromises);
+    res.json({ files: results });
+  });
+
+  req.pipe(busboy);
+});
+
+// ─── Extract content from social media URLs ───
+// Accepts { urls: ["https://..."] }
+// Downloads audio via yt-dlp, grabs captions or transcribes with Whisper
+app.post('/api/social/extract', requireAuth, async (req, res) => {
+  const { urls } = req.body;
+
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return res.status(400).json({ error: 'urls array required' });
+  }
+
+  if (urls.length > 5) {
+    return res.status(400).json({ error: 'Max 5 URLs at a time' });
+  }
+
+  const userId = req.user.id;
+  const extracted = await Promise.allSettled(
+    urls.map((url) => extractFromUrl(url))
+  );
+
+  const results = await Promise.all(extracted.map(async (r, i) => {
+    if (r.status !== 'fulfilled') {
+      return { url: urls[i], error: r.reason?.message || 'Extraction failed' };
+    }
+    const item = r.value;
+    // Persist to DB
+    console.log(`[social] userId=${userId}, saving=${userId !== 'anonymous'}, title=${item.title?.slice(0, 40)}`);
+    if (userId !== 'anonymous') {
+      try {
+        const { data: saved, error: dbErr } = await supabase.from('content_items').insert({
+          user_id: userId, type: 'social',
+          url: item.url,
+          transcript: item.transcript || null,
+          metadata: {
+            platform: item.platform, title: item.title,
+            description: item.description, uploader: item.uploader,
+            duration: item.duration, thumbnail: item.thumbnail,
+            source: item.source, language: item.language,
+          },
+        }).select('id').single();
+        if (dbErr) console.log('[db] Save error:', dbErr.message);
+        if (saved) item.dbId = saved.id;
+      } catch (e) {
+        console.log('[db] Failed to save social item:', e.message);
+      }
+    }
+    return item;
+  }));
+
+  res.json({ results });
+});
+
+// ─── Outlier Detector endpoints ───
+
+// Get all followed creators for user
+app.get('/api/outlier/creators', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.json({ creators: [] });
+
+  const { data, error } = await supabase
+    .from('outlier_creators')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ creators: data });
+});
+
+// Follow a new creator — resolves channel, fetches videos, calculates outliers
+app.post('/api/outlier/creators', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.status(401).json({ error: 'Auth required' });
+
+  const { platform, username } = req.body;
+  if (!platform || !username) return res.status(400).json({ error: 'platform and username required' });
+
+  try {
+    if (platform === 'youtube') {
+      // Resolve channel
+      console.log(`[outlier] Resolving YouTube channel: ${username}`);
+      const channel = await resolveChannel(username);
+
+      // Insert creator
+      const { data: creator, error: insertErr } = await supabase
+        .from('outlier_creators')
+        .upsert({
+          user_id: userId,
+          platform: 'youtube',
+          username: username.startsWith('@') ? username : '@' + username,
+          platform_id: channel.channelId,
+          display_name: channel.displayName,
+          avatar_url: channel.avatarUrl,
+          subscriber_count: channel.subscriberCount,
+          last_scanned_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,platform,username' })
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      // Fetch videos and calculate outliers
+      console.log(`[outlier] Fetching videos for ${channel.displayName}`);
+      const videos = await fetchRecentVideos(channel.uploadsPlaylistId, 50);
+      const { videos: enriched, averages } = calculateOutliers(videos);
+
+      // Update creator averages
+      await supabase.from('outlier_creators').update({
+        avg_views: averages.views,
+        avg_likes: averages.likes,
+        avg_comments: averages.comments,
+      }).eq('id', creator.id);
+
+      // Upsert videos
+      if (enriched.length > 0) {
+        const videoRows = enriched.map((v) => ({
+          creator_id: creator.id,
+          user_id: userId,
+          platform: 'youtube',
+          video_id: v.videoId,
+          title: v.title,
+          thumbnail_url: v.thumbnailUrl,
+          url: v.url,
+          published_at: v.publishedAt,
+          views: v.views,
+          likes: v.likes,
+          comments: v.comments,
+          duration_seconds: v.durationSeconds,
+          views_multiplier: v.viewsMultiplier,
+          likes_multiplier: v.likesMultiplier,
+          comments_multiplier: v.commentsMultiplier,
+          is_outlier: v.isOutlier,
+        }));
+
+        const { error: vidErr } = await supabase
+          .from('outlier_videos')
+          .upsert(videoRows, { onConflict: 'creator_id,video_id' });
+
+        if (vidErr) console.log('[outlier] Video upsert error:', vidErr.message);
+      }
+
+      console.log(`[outlier] Done: ${enriched.length} videos, ${enriched.filter(v => v.isOutlier).length} outliers`);
+
+      res.json({
+        creator: { ...creator, avg_views: averages.views, avg_likes: averages.likes, avg_comments: averages.comments },
+        videoCount: enriched.length,
+        outlierCount: enriched.filter((v) => v.isOutlier).length,
+      });
+    } else if (platform === 'tiktok') {
+      console.log(`[outlier] Resolving TikTok profile: ${username}`);
+      const profile = await tiktokService.resolveProfile(username);
+
+      const { data: creator, error: insertErr } = await supabase
+        .from('outlier_creators')
+        .upsert({
+          user_id: userId,
+          platform: 'tiktok',
+          username: username.startsWith('@') ? username : '@' + username,
+          platform_id: profile.userId,
+          display_name: profile.displayName,
+          avatar_url: profile.avatarUrl,
+          subscriber_count: profile.followerCount,
+          last_scanned_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,platform,username' })
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      console.log(`[outlier] Fetching TikTok videos for ${profile.displayName}`);
+      const videos = await tiktokService.fetchRecentVideos(username, 30);
+      const { videos: enriched, averages } = tiktokService.calculateOutliers(videos);
+
+      await supabase.from('outlier_creators').update({
+        avg_views: averages.views, avg_likes: averages.likes, avg_comments: averages.comments,
+      }).eq('id', creator.id);
+
+      if (enriched.length > 0) {
+        const videoRows = enriched.map((v) => ({
+          creator_id: creator.id, user_id: userId, platform: 'tiktok',
+          video_id: v.videoId, title: v.title, thumbnail_url: v.thumbnailUrl,
+          url: v.url, published_at: v.publishedAt,
+          views: v.views, likes: v.likes, comments: v.comments,
+          duration_seconds: v.durationSeconds,
+          views_multiplier: v.viewsMultiplier, likes_multiplier: v.likesMultiplier,
+          comments_multiplier: v.commentsMultiplier, is_outlier: v.isOutlier,
+        }));
+        const { error: vidErr } = await supabase.from('outlier_videos').upsert(videoRows, { onConflict: 'creator_id,video_id' });
+        if (vidErr) console.log('[outlier] TikTok video upsert error:', vidErr.message);
+      }
+
+      console.log(`[outlier] TikTok done: ${enriched.length} videos, ${enriched.filter(v => v.isOutlier).length} outliers`);
+      res.json({
+        creator: { ...creator, avg_views: averages.views, avg_likes: averages.likes, avg_comments: averages.comments },
+        videoCount: enriched.length,
+        outlierCount: enriched.filter((v) => v.isOutlier).length,
+      });
+
+    } else if (platform === 'instagram') {
+      console.log(`[outlier] Resolving Instagram profile: ${username}`);
+      const profile = await instagramService.resolveProfile(username);
+
+      const { data: creator, error: insertErr } = await supabase
+        .from('outlier_creators')
+        .upsert({
+          user_id: userId,
+          platform: 'instagram',
+          username: username.startsWith('@') ? username : '@' + username,
+          platform_id: profile.userId,
+          display_name: profile.displayName,
+          avatar_url: profile.avatarUrl,
+          subscriber_count: profile.followerCount,
+          last_scanned_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,platform,username' })
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      console.log(`[outlier] Fetching Instagram posts for ${profile.displayName}`);
+      const posts = await instagramService.fetchRecentPosts(username, 30);
+      const { videos: enriched, averages } = instagramService.calculateOutliers(posts);
+
+      await supabase.from('outlier_creators').update({
+        avg_views: averages.views, avg_likes: averages.likes, avg_comments: averages.comments,
+      }).eq('id', creator.id);
+
+      if (enriched.length > 0) {
+        const videoRows = enriched.map((v) => ({
+          creator_id: creator.id, user_id: userId, platform: 'instagram',
+          video_id: v.videoId, title: v.title, thumbnail_url: v.thumbnailUrl,
+          url: v.url, published_at: v.publishedAt,
+          views: v.views, likes: v.likes, comments: v.comments,
+          duration_seconds: v.durationSeconds,
+          views_multiplier: v.viewsMultiplier, likes_multiplier: v.likesMultiplier,
+          comments_multiplier: v.commentsMultiplier, is_outlier: v.isOutlier,
+        }));
+        const { error: vidErr } = await supabase.from('outlier_videos').upsert(videoRows, { onConflict: 'creator_id,video_id' });
+        if (vidErr) console.log('[outlier] Instagram video upsert error:', vidErr.message);
+      }
+
+      console.log(`[outlier] Instagram done: ${enriched.length} posts, ${enriched.filter(v => v.isOutlier).length} outliers`);
+      res.json({
+        creator: { ...creator, avg_views: averages.views, avg_likes: averages.likes, avg_comments: averages.comments },
+        videoCount: enriched.length,
+        outlierCount: enriched.filter((v) => v.isOutlier).length,
+      });
+
+    } else {
+      res.status(400).json({ error: `${platform} not supported` });
+    }
+  } catch (err) {
+    console.log('[outlier] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a followed creator
+app.delete('/api/outlier/creators/:id', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.status(401).json({ error: 'Auth required' });
+
+  const { error } = await supabase
+    .from('outlier_creators')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('user_id', userId);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// Get outlier videos for user (optionally filtered)
+app.get('/api/outlier/videos', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.json({ videos: [] });
+
+  let query = supabase
+    .from('outlier_videos')
+    .select('*, outlier_creators!inner(username, display_name, avatar_url, platform, avg_views, avg_likes, avg_comments)')
+    .eq('user_id', userId)
+    .order('views_multiplier', { ascending: false });
+
+  if (req.query.outliers_only === 'true') {
+    query = query.eq('is_outlier', true);
+  }
+  if (req.query.creator_id) {
+    query = query.eq('creator_id', req.query.creator_id);
+  }
+  if (req.query.platform) {
+    query = query.eq('platform', req.query.platform);
+  }
+
+  const { data, error } = await query.limit(200);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ videos: data });
+});
+
+// Re-scan a creator (refresh videos)
+app.post('/api/outlier/scan/:creatorId', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.status(401).json({ error: 'Auth required' });
+
+  const { data: creator, error: fetchErr } = await supabase
+    .from('outlier_creators')
+    .select('*')
+    .eq('id', req.params.creatorId)
+    .eq('user_id', userId)
+    .single();
+
+  if (fetchErr || !creator) return res.status(404).json({ error: 'Creator not found' });
+
+  try {
+    let videos, enriched, averages;
+
+    if (creator.platform === 'youtube') {
+      const channel = await resolveChannel(creator.username);
+      videos = await fetchRecentVideos(channel.uploadsPlaylistId, 50);
+      ({ videos: enriched, averages } = calculateOutliers(videos));
+    } else if (creator.platform === 'tiktok') {
+      videos = await tiktokService.fetchRecentVideos(creator.username, 30);
+      ({ videos: enriched, averages } = tiktokService.calculateOutliers(videos));
+    } else if (creator.platform === 'instagram') {
+      videos = await instagramService.fetchRecentPosts(creator.username, 30);
+      ({ videos: enriched, averages } = instagramService.calculateOutliers(videos));
+    } else {
+      return res.status(400).json({ error: `${creator.platform} not supported` });
+    }
+
+    await supabase.from('outlier_creators').update({
+      avg_views: averages.views, avg_likes: averages.likes, avg_comments: averages.comments,
+      last_scanned_at: new Date().toISOString(),
+    }).eq('id', creator.id);
+
+    if (enriched.length > 0) {
+      const videoRows = enriched.map((v) => ({
+        creator_id: creator.id, user_id: userId, platform: creator.platform,
+        video_id: v.videoId, title: v.title, thumbnail_url: v.thumbnailUrl,
+        url: v.url, published_at: v.publishedAt,
+        views: v.views, likes: v.likes, comments: v.comments,
+        duration_seconds: v.durationSeconds,
+        views_multiplier: v.viewsMultiplier, likes_multiplier: v.likesMultiplier,
+        comments_multiplier: v.commentsMultiplier, is_outlier: v.isOutlier,
+      }));
+      await supabase.from('outlier_videos').upsert(videoRows, { onConflict: 'creator_id,video_id' });
+    }
+
+    res.json({ videoCount: enriched.length, outlierCount: enriched.filter((v) => v.isOutlier).length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Email routes (auth applied per-route inside) ───
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/email')) {
+    return requireAuth(req, res, next);
+  }
+  next();
+});
+app.use(emailRoutes);
+
+// ─── Integration routes (auth required) ───
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/integrations') || req.path.startsWith('/api/integration-context')) {
+    return requireAuth(req, res, next);
+  }
+  next();
+});
+app.use(integrationRoutes);
+
+// ─── Sales routes (auth required) ───
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/sales')) return requireAuth(req, res, next);
+  next();
+});
+app.use(salesRoutes);
+
+// ─── Products routes (auth required) ───
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/products')) return requireAuth(req, res, next);
+  next();
+});
+app.use(productRoutes);
+
+// ─── Webhook routes (no auth — external services) ───
+app.use(webhookRoutes);
+
+app.listen(PORT, () => {
+  console.log(`AICEO backend running on port ${PORT}`);
+});

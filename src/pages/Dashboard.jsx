@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, ChevronDown, Phone, FileText, ExternalLink, X, Copy } from 'lucide-react';
+import { Check, ChevronDown, Phone, FileText, ExternalLink, X, Copy, Loader } from 'lucide-react';
+import { connectIntegration, getIntegrations, getEmailAccounts } from '../lib/api';
+import { supabase } from '../lib/supabase';
 import './Pages.css';
 import './Dashboard.css';
 
@@ -22,13 +24,12 @@ const ONBOARDING_STEPS = [
   { id: 5, label: 'Connect your social media profiles to automate content posting', type: 'action' },
 ];
 
-const MOCK_WEBHOOK_URL = 'https://api.puerlypersonal.com/webhooks/fireflies/abc123';
-const MOCK_WEBHOOK_SECRET = 'whsec_k7x9Qm2pLnR4vT8wZ1yB3dF6';
-
 export default function Dashboard() {
   const navigate = useNavigate();
+  const [dashLoading, setDashLoading] = useState(true);
   const [onboardingVisible, setOnboardingVisible] = useState(true);
   const [completedSteps, setCompletedSteps] = useState(new Set([1]));
+  const [connectedIntegrations, setConnectedIntegrations] = useState({});
   const [selectedNoteTaker, setSelectedNoteTaker] = useState(NOTE_TAKERS[0]);
   const [selectedPayment, setSelectedPayment] = useState(PAYMENT_TRACKERS[0]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -36,25 +37,103 @@ export default function Dashboard() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState(null); // 'notetaker' or 'payment'
   const [apiKey, setApiKey] = useState('');
-  const [firefliesStep, setFirefliesStep] = useState(1); // 1 = enter key, 2 = webhook info
+  const [firefliesStep, setFirefliesStep] = useState(1);
   const [copiedField, setCopiedField] = useState(null);
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState(null);
+  const [firefliesWebhook, setFirefliesWebhook] = useState({ url: '', secret: '' });
+
+  // Load onboarding state + integration status on mount
+  useEffect(() => {
+    async function load() {
+      const steps = new Set([1]); // signup always done
+
+      // Load onboarding from DB
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: onboarding } = await supabase
+          .from('onboarding')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .single();
+
+        if (onboarding) {
+          setOnboardingVisible(onboarding.is_visible);
+          for (const s of (onboarding.completed_steps || [])) {
+            // Map string steps to IDs
+            if (s === 'signup') steps.add(1);
+            if (s === 'brand-dna') steps.add(2);
+            if (s === 'payment') steps.add(3);
+            if (s === 'notetaker') steps.add(4);
+            if (s === 'social') steps.add(5);
+          }
+        }
+
+        // Check Brand DNA
+        const { data: brandDna } = await supabase
+          .from('brand_dna')
+          .select('id')
+          .eq('user_id', session.user.id)
+          .single();
+        if (brandDna) steps.add(2);
+      }
+
+      // Check connected integrations
+      const [intResult, emailResult] = await Promise.all([
+        getIntegrations(),
+        getEmailAccounts(),
+      ]);
+
+      const intMap = {};
+      for (const int of (intResult.integrations || [])) {
+        intMap[int.provider] = int;
+      }
+      setConnectedIntegrations(intMap);
+
+      // Auto-mark steps based on connections
+      if (intMap.stripe?.is_active || intMap.whop?.is_active) steps.add(3);
+      if (intMap.fireflies?.is_active || intMap.fathom?.is_active) steps.add(4);
+
+      setCompletedSteps(steps);
+      setDashLoading(false);
+    }
+    load();
+  }, []);
 
   const totalSteps = ONBOARDING_STEPS.length;
   const completedCount = completedSteps.size;
   const progressPercent = (completedCount / totalSteps) * 100;
 
   const handleComplete = (stepId) => {
-    setCompletedSteps((prev) => new Set([...prev, stepId]));
+    setCompletedSteps((prev) => {
+      const next = new Set([...prev, stepId]);
+      // Persist to DB
+      const stepMap = { 1: 'signup', 2: 'brand-dna', 3: 'payment', 4: 'notetaker', 5: 'social' };
+      const stepsArr = [...next].map(id => stepMap[id]).filter(Boolean);
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+          supabase.from('onboarding').upsert({
+            user_id: session.user.id,
+            completed_steps: stepsArr,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'user_id' });
+        }
+      });
+      return next;
+    });
   };
 
   const handleSkip = (stepId) => {
-    setCompletedSteps((prev) => new Set([...prev, stepId]));
+    handleComplete(stepId);
   };
 
   const openNotetakerModal = () => {
     setApiKey('');
     setFirefliesStep(1);
     setCopiedField(null);
+    setConnectError(null);
+    setConnecting(false);
+    setFirefliesWebhook({ url: '', secret: '' });
     setModalType('notetaker');
     setModalOpen(true);
   };
@@ -62,22 +141,48 @@ export default function Dashboard() {
   const openPaymentModal = () => {
     setApiKey('');
     setCopiedField(null);
+    setConnectError(null);
+    setConnecting(false);
     setModalType('payment');
     setModalOpen(true);
   };
 
-  const handleFirefliesNext = () => {
+  const handleFirefliesNext = async () => {
     if (!apiKey.trim()) return;
-    setFirefliesStep(2);
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const result = await connectIntegration('fireflies', apiKey);
+      setFirefliesWebhook({
+        url: result.integration.webhook_url || '',
+        secret: result.integration.webhook_secret || '',
+      });
+      setFirefliesStep(2);
+    } catch (err) {
+      setConnectError(err.message);
+    } finally {
+      setConnecting(false);
+    }
   };
 
-  const handleConnect = () => {
-    setModalOpen(false);
-    if (modalType === 'payment') handleComplete(3);
-    else handleComplete(4);
-    setApiKey('');
-    setFirefliesStep(1);
-    setModalType(null);
+  const handleConnect = async () => {
+    if (!apiKey.trim()) return;
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const provider = modalType === 'payment' ? selectedPayment.id : selectedNoteTaker.id;
+      await connectIntegration(provider, apiKey);
+      setModalOpen(false);
+      if (modalType === 'payment') handleComplete(3);
+      else handleComplete(4);
+      setApiKey('');
+      setFirefliesStep(1);
+      setModalType(null);
+    } catch (err) {
+      setConnectError(err.message);
+    } finally {
+      setConnecting(false);
+    }
   };
 
   const copyToClipboard = (text, field) => {
@@ -85,6 +190,36 @@ export default function Dashboard() {
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
   };
+
+  if (dashLoading) {
+    return (
+      <div className="page-container">
+        <h1 className="page-title">Dashboard</h1>
+        <div className="skeleton-card" style={{ marginBottom: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div className="skeleton" style={{ width: 120, height: 22, borderRadius: 12 }} />
+            <div className="skeleton" style={{ width: 80, height: 16 }} />
+          </div>
+          <div className="skeleton" style={{ height: 8, borderRadius: 6, marginBottom: 24 }} />
+          {[1, 2, 3, 4, 5].map(i => (
+            <div key={i} className="skeleton-row">
+              <div className="skeleton" style={{ width: 24, height: 24, borderRadius: '50%' }} />
+              <div className="skeleton skeleton-text" style={{ marginBottom: 0 }} />
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 16 }}>
+          {[1, 2].map(i => (
+            <div key={i} className="skeleton-card" style={{ flex: 1, padding: 24 }}>
+              <div className="skeleton" style={{ width: 40, height: 40, borderRadius: 12, marginBottom: 12 }} />
+              <div className="skeleton" style={{ width: 60, height: 28, marginBottom: 8 }} />
+              <div className="skeleton skeleton-text--short skeleton-text" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-container">
@@ -276,17 +411,18 @@ export default function Dashboard() {
                   <input
                     type="text"
                     className="modal-input"
-                    placeholder="Paste your API key here"
+                    placeholder="sk_live_..."
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                   />
                 </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
                 <button
                   className="modal-btn modal-btn--primary"
-                  disabled={!apiKey.trim()}
+                  disabled={!apiKey.trim() || connecting}
                   onClick={handleConnect}
                 >
-                  Connect
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Connecting...</> : 'Connect'}
                 </button>
               </>
             )}
@@ -305,12 +441,13 @@ export default function Dashboard() {
                     onChange={(e) => setApiKey(e.target.value)}
                   />
                 </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
                 <button
                   className="modal-btn modal-btn--primary"
-                  disabled={!apiKey.trim()}
+                  disabled={!apiKey.trim() || connecting}
                   onClick={handleConnect}
                 >
-                  Connect
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Connecting...</> : 'Connect'}
                 </button>
               </>
             )}
@@ -329,12 +466,13 @@ export default function Dashboard() {
                     onChange={(e) => setApiKey(e.target.value)}
                   />
                 </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
                 <button
                   className="modal-btn modal-btn--primary"
-                  disabled={!apiKey.trim()}
+                  disabled={!apiKey.trim() || connecting}
                   onClick={handleConnect}
                 >
-                  Connect
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Connecting...</> : 'Connect'}
                 </button>
               </>
             )}
@@ -353,12 +491,13 @@ export default function Dashboard() {
                     onChange={(e) => setApiKey(e.target.value)}
                   />
                 </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
                 <button
                   className="modal-btn modal-btn--primary"
-                  disabled={!apiKey.trim()}
+                  disabled={!apiKey.trim() || connecting}
                   onClick={handleFirefliesNext}
                 >
-                  Next
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Validating...</> : 'Next'}
                 </button>
               </>
             )}
@@ -373,12 +512,12 @@ export default function Dashboard() {
                     <input
                       type="text"
                       className="modal-input modal-input--readonly"
-                      value={MOCK_WEBHOOK_URL}
+                      value={firefliesWebhook.url}
                       readOnly
                     />
                     <button
                       className="modal-copy-btn"
-                      onClick={() => copyToClipboard(MOCK_WEBHOOK_URL, 'url')}
+                      onClick={() => copyToClipboard(firefliesWebhook.url, 'url')}
                     >
                       {copiedField === 'url' ? <Check size={16} /> : <Copy size={16} />}
                     </button>
@@ -390,12 +529,12 @@ export default function Dashboard() {
                     <input
                       type="text"
                       className="modal-input modal-input--readonly"
-                      value={MOCK_WEBHOOK_SECRET}
+                      value={firefliesWebhook.secret}
                       readOnly
                     />
                     <button
                       className="modal-copy-btn"
-                      onClick={() => copyToClipboard(MOCK_WEBHOOK_SECRET, 'secret')}
+                      onClick={() => copyToClipboard(firefliesWebhook.secret, 'secret')}
                     >
                       {copiedField === 'secret' ? <Check size={16} /> : <Copy size={16} />}
                     </button>
@@ -403,9 +542,9 @@ export default function Dashboard() {
                 </div>
                 <button
                   className="modal-btn modal-btn--primary"
-                  onClick={handleConnect}
+                  onClick={() => { handleComplete(4); setModalOpen(false); }}
                 >
-                  Connect
+                  Done
                 </button>
               </>
             )}

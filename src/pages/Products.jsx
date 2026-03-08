@@ -1,39 +1,44 @@
-import { useState, useRef } from 'react';
-import { Plus, X, Upload, Trash2, ChevronDown, Check } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, X, Upload, Trash2, ChevronDown, Check, Link2, Copy, CheckCheck, RefreshCw, Loader2 } from 'lucide-react';
+import { getProducts, createProduct, updateProduct as updateProductApi, deleteProduct as deleteProductApi, regeneratePaymentLink } from '../lib/api';
 import './Pages.css';
 import './Products.css';
 
 const PRODUCT_TYPES = ['Coaching', 'Course', 'SAAS', 'LeadMagnet', 'Community'];
 const PRICE_MODES = ['One-time', 'Monthly'];
 
-export const INITIAL_PRODUCTS = [
-  {
-    id: 1,
-    name: 'Premium Coaching Program',
-    description: 'Personalized 1-on-1 coaching to help you scale your business with proven strategies and accountability.',
-    type: 'Coaching',
-    price: '2500',
-    priceMode: 'Monthly',
-    photos: [],
-  },
-  {
-    id: 2,
-    name: 'Growth Accelerator Course',
-    description: 'A self-paced online course covering content strategy, lead generation, and conversion optimization.',
-    type: 'Course',
-    price: '497',
-    priceMode: 'One-time',
-    photos: [],
-  },
-];
-
 export default function Products() {
-  const [products, setProducts] = useState(INITIAL_PRODUCTS);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [addingNew, setAddingNew] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [copiedId, setCopiedId] = useState(null);
+  const [regeneratingId, setRegeneratingId] = useState(null);
   const [newProduct, setNewProduct] = useState({ name: '', description: '', type: '', price: '', priceMode: 'One-time', photos: [] });
-  const [typeDropdownOpen, setTypeDropdownOpen] = useState(null); // product id or 'new'
+  const [typeDropdownOpen, setTypeDropdownOpen] = useState(null);
   const fileInputRefs = useRef({});
+
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  async function loadProducts() {
+    setLoading(true);
+    try {
+      const { products: data } = await getProducts();
+      setProducts(data.map(p => ({
+        ...p,
+        price: (p.price_cents / 100).toString(),
+        priceMode: p.price_mode === 'monthly' ? 'Monthly' : 'One-time',
+        photos: p.photos || [],
+      })));
+    } catch (err) {
+      console.error('Failed to load products:', err);
+    }
+    setLoading(false);
+  }
 
   const handlePhotoUpload = (productId, e) => {
     const files = Array.from(e.target.files);
@@ -64,14 +69,14 @@ export default function Products() {
     if (productId === 'new') {
       setNewProduct((prev) => {
         const photo = prev.photos.find((p) => p.id === photoId);
-        if (photo) URL.revokeObjectURL(photo.url);
+        if (photo?.url?.startsWith('blob:')) URL.revokeObjectURL(photo.url);
         return { ...prev, photos: prev.photos.filter((p) => p.id !== photoId) };
       });
     } else {
       setProducts((prev) => prev.map((p) => {
         if (p.id !== productId) return p;
         const photo = p.photos.find((ph) => ph.id === photoId);
-        if (photo) URL.revokeObjectURL(photo.url);
+        if (photo?.url?.startsWith('blob:')) URL.revokeObjectURL(photo.url);
         return { ...p, photos: p.photos.filter((ph) => ph.id !== photoId) };
       }));
     }
@@ -81,22 +86,84 @@ export default function Products() {
     setProducts((prev) => prev.map((p) => p.id === id ? { ...p, [field]: value } : p));
   };
 
-  const deleteProduct = (id) => {
-    const product = products.find((p) => p.id === id);
-    if (product) product.photos.forEach((ph) => URL.revokeObjectURL(ph.url));
-    setProducts((prev) => prev.filter((p) => p.id !== id));
-    if (editingId === id) setEditingId(null);
+  const handleDelete = async (id) => {
+    try {
+      await deleteProductApi(id);
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+      if (editingId === id) setEditingId(null);
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
-  const addProduct = () => {
+  const handleSaveEdit = async (product) => {
+    setSaving(true);
+    setError('');
+    try {
+      const { product: updated } = await updateProductApi(product.id, {
+        name: product.name,
+        description: product.description,
+        type: product.type,
+      });
+      setProducts((prev) => prev.map((p) => p.id === product.id ? {
+        ...p,
+        ...updated,
+        price: (updated.price_cents / 100).toString(),
+        priceMode: updated.price_mode === 'monthly' ? 'Monthly' : 'One-time',
+        photos: updated.photos || p.photos,
+      } : p));
+      setEditingId(null);
+    } catch (err) {
+      setError(err.message);
+    }
+    setSaving(false);
+  };
+
+  const addProduct = async () => {
     if (!newProduct.name.trim() || !newProduct.type || !newProduct.price.trim()) return;
-    const product = {
-      ...newProduct,
-      id: Date.now(),
-    };
-    setProducts((prev) => [...prev, product]);
-    setNewProduct({ name: '', description: '', type: '', price: '', priceMode: 'One-time', photos: [] });
-    setAddingNew(false);
+    setSaving(true);
+    setError('');
+    try {
+      const { product } = await createProduct({
+        name: newProduct.name,
+        description: newProduct.description,
+        type: newProduct.type,
+        price: newProduct.price,
+        priceMode: newProduct.priceMode,
+      });
+      setProducts((prev) => [{
+        ...product,
+        price: (product.price_cents / 100).toString(),
+        priceMode: product.price_mode === 'monthly' ? 'Monthly' : 'One-time',
+        photos: product.photos || [],
+      }, ...prev]);
+      setNewProduct({ name: '', description: '', type: '', price: '', priceMode: 'One-time', photos: [] });
+      setAddingNew(false);
+    } catch (err) {
+      setError(err.message);
+    }
+    setSaving(false);
+  };
+
+  const copyLink = (id, url) => {
+    navigator.clipboard.writeText(url);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleRegenerateLink = async (id) => {
+    setRegeneratingId(id);
+    try {
+      const { product } = await regeneratePaymentLink(id);
+      setProducts((prev) => prev.map((p) => p.id === id ? {
+        ...p,
+        payment_link_url: product.payment_link_url,
+        stripe_payment_link_id: product.stripe_payment_link_id,
+      } : p));
+    } catch (err) {
+      setError(err.message);
+    }
+    setRegeneratingId(null);
   };
 
   const renderPhotoSection = (productId, photos) => {
@@ -179,6 +246,58 @@ export default function Products() {
     );
   };
 
+  const renderPaymentLink = (product) => {
+    if (!product.payment_link_url) return null;
+    return (
+      <div className="products-payment-link">
+        <div className="products-payment-link-header">
+          <Link2 size={13} />
+          <span>Payment Link</span>
+        </div>
+        <div className="products-payment-link-row">
+          <span className="products-payment-link-url">{product.payment_link_url}</span>
+          <button
+            className={`products-copy-btn ${copiedId === product.id ? 'products-copy-btn--copied' : ''}`}
+            onClick={() => copyLink(product.id, product.payment_link_url)}
+            title="Copy link"
+          >
+            {copiedId === product.id ? <CheckCheck size={14} /> : <Copy size={14} />}
+          </button>
+          <button
+            className="products-regen-btn"
+            onClick={() => handleRegenerateLink(product.id)}
+            disabled={regeneratingId === product.id}
+            title="Regenerate link"
+          >
+            {regeneratingId === product.id ? <Loader2 size={14} className="products-spin" /> : <RefreshCw size={14} />}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <div className="products-header">
+          <h1 className="page-title">Products</h1>
+        </div>
+        <div className="products-grid">
+          {[1, 2].map(i => (
+            <div key={i} className="products-card">
+              <div className="skeleton skeleton-text" style={{ width: '60%', height: 18, marginBottom: 16 }} />
+              <div className="skeleton skeleton-text" style={{ width: '100%', height: 14, marginBottom: 8 }} />
+              <div className="skeleton skeleton-text" style={{ width: '80%', height: 14, marginBottom: 16 }} />
+              <div className="skeleton skeleton-text--short" style={{ width: '30%', height: 24, marginBottom: 16 }} />
+              <div className="skeleton" style={{ width: '100%', height: 36, marginBottom: 12 }} />
+              <div className="skeleton" style={{ width: '100%', height: 40 }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="page-container">
       <div className="products-header">
@@ -190,6 +309,13 @@ export default function Products() {
           </button>
         )}
       </div>
+
+      {error && (
+        <div className="products-error">
+          <span>{error}</span>
+          <button onClick={() => setError('')}><X size={14} /></button>
+        </div>
+      )}
 
       {/* Add New Product Form */}
       {addingNew && (
@@ -248,10 +374,23 @@ export default function Products() {
 
           <button
             className="products-save-btn"
-            disabled={!newProduct.name.trim() || !newProduct.type || !newProduct.price.trim()}
+            disabled={!newProduct.name.trim() || !newProduct.type || !newProduct.price.trim() || saving}
             onClick={addProduct}
           >
-            Add Product
+            {saving ? <><Loader2 size={16} className="products-spin" /> Creating on Stripe...</> : 'Create Product & Generate Link'}
+          </button>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {products.length === 0 && !addingNew && (
+        <div className="products-empty">
+          <Link2 size={40} />
+          <h3>No products yet</h3>
+          <p>Create a product to generate a Stripe payment link you can share with clients.</p>
+          <button className="products-add-btn" onClick={() => setAddingNew(true)}>
+            <Plus size={16} />
+            Create Your First Product
           </button>
         </div>
       )}
@@ -288,7 +427,7 @@ export default function Products() {
                     rows={3}
                   />
                 ) : (
-                  <p className="products-value products-value--desc">{product.description}</p>
+                  <p className="products-value products-value--desc">{product.description || 'No description'}</p>
                 )}
               </div>
 
@@ -303,35 +442,23 @@ export default function Products() {
 
               <div className="products-field">
                 <label className="products-label">Pricing</label>
-                {isEditing ? (
-                  <>
-                    {renderPriceMode(product.id, product.priceMode, (mode) => updateProduct(product.id, 'priceMode', mode))}
-                    <div className="products-price-input-wrap">
-                      <span className="products-price-prefix">$</span>
-                      <input
-                        type="text"
-                        className="products-input products-input--price"
-                        value={product.price}
-                        onChange={(e) => updateProduct(product.id, 'price', e.target.value)}
-                      />
-                      {product.priceMode === 'Monthly' && <span className="products-price-suffix">/mo</span>}
-                    </div>
-                  </>
-                ) : (
-                  <p className="products-value products-price-display">
-                    ${Number(product.price).toLocaleString()}
-                    {product.priceMode === 'Monthly' && <span className="products-price-suffix-text">/mo</span>}
-                  </p>
-                )}
+                <p className="products-value products-price-display">
+                  ${Number(product.price).toLocaleString()}
+                  {product.priceMode === 'Monthly' && <span className="products-price-suffix-text">/mo</span>}
+                </p>
               </div>
+
+              {renderPaymentLink(product)}
 
               <div className="products-card-actions">
                 {isEditing ? (
-                  <button className="products-edit-btn" onClick={() => setEditingId(null)}>Done</button>
+                  <button className="products-edit-btn" onClick={() => handleSaveEdit(product)} disabled={saving}>
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
                 ) : (
                   <button className="products-edit-btn" onClick={() => setEditingId(product.id)}>Edit</button>
                 )}
-                <button className="products-delete-btn" onClick={() => deleteProduct(product.id)}>
+                <button className="products-delete-btn" onClick={() => handleDelete(product.id)}>
                   <Trash2 size={14} />
                 </button>
               </div>

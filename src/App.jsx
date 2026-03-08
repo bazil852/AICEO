@@ -14,7 +14,15 @@ import OutlierDetector from './pages/OutlierDetector';
 import CRM from './pages/CRM';
 
 function App() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+        <div className="spinner" />
+      </div>
+    );
+  }
 
   if (!user) {
     return <LoginScreen />;

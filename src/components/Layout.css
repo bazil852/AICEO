@@ -173,6 +173,67 @@
   flex-shrink: 0;
 }
 
+.topbar-avatar-letter {
+  font-size: 13px;
+  font-weight: 700;
+  color: inherit;
+}
+
+.topbar-account-item-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.topbar-account-item-wrap .topbar-account-item {
+  flex: 1;
+  padding-right: 30px;
+}
+
+.topbar-account-remove {
+  position: absolute;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+
+.topbar-account-item-wrap:hover .topbar-account-remove {
+  opacity: 1;
+}
+
+.topbar-account-remove:hover {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.topbar-account-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 4px 8px;
+}
+
+.topbar-account-add .topbar-account-name {
+  color: var(--text-muted);
+}
+
+.topbar-account-add:hover .topbar-account-name {
+  color: var(--text-primary);
+}
+
+.topbar-account-avatar--add {
+  border-style: dashed;
+}
+
 /* ── Search ── */
 .topbar-center {
   flex: 1;

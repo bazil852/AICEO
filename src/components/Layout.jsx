@@ -2,26 +2,22 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { navItems } from './Sidebar';
 import { useAuth } from '../context/AuthContext';
-import { Search, User, ChevronDown, Check } from 'lucide-react';
+import { Search, User, ChevronDown, Check, Plus, Mail, X } from 'lucide-react';
+import { getEmailAccounts, deleteEmailAccount } from '../lib/api';
 import Sidebar from './Sidebar';
 import BottomBar from './BottomBar';
 import CreditPill from './CreditPill';
 import MobileProfileButton from './MobileProfileButton';
 import './Layout.css';
 
-const MOCK_ACCOUNTS = [
-  { id: 1, name: 'Marko Filipovic', email: 'marko@puerlypersonal.com', plan: 'Growth' },
-  { id: 2, name: 'Marko - Agency', email: 'marko@agency.io', plan: 'Pro' },
-  { id: 3, name: 'Test Workspace', email: 'test@workspace.com', plan: 'Starter' },
-];
-
-function TopBar() {
+function TopBar({ accounts, selectedAccountId, setSelectedAccountId, onAddAccount, onRemoveAccount }) {
   const location = useLocation();
   const isInbox = location.pathname === '/inbox';
   const [searchValue, setSearchValue] = useState('');
   const [accountOpen, setAccountOpen] = useState(false);
-  const [activeAccount, setActiveAccount] = useState(MOCK_ACCOUNTS[0]);
   const dropdownRef = useRef(null);
+
+  const activeAccount = accounts.find((a) => a.id === selectedAccountId) || null;
 
   useEffect(() => {
     if (!accountOpen) return;
@@ -42,29 +38,75 @@ function TopBar() {
           onClick={() => setAccountOpen(!accountOpen)}
         >
           <div className="topbar-avatar">
-            <User size={14} />
+            {activeAccount ? (
+              <span className="topbar-avatar-letter">
+                {(activeAccount.display_name || activeAccount.email)[0].toUpperCase()}
+              </span>
+            ) : (
+              <Mail size={14} />
+            )}
           </div>
           <ChevronDown size={12} className={`topbar-profile-chevron ${accountOpen ? 'topbar-profile-chevron--open' : ''}`} />
         </button>
         {accountOpen && (
           <div className="topbar-account-menu">
-            <div className="topbar-account-header">Switch Account</div>
-            {MOCK_ACCOUNTS.map((account) => (
+            <div className="topbar-account-header">
+              {accounts.length > 0 ? 'Email Accounts' : 'No Accounts'}
+            </div>
+            {/* All Accounts option */}
+            {accounts.length > 1 && (
               <button
-                key={account.id}
-                className={`topbar-account-item ${activeAccount.id === account.id ? 'topbar-account-item--active' : ''}`}
-                onClick={() => { setActiveAccount(account); setAccountOpen(false); }}
+                className={`topbar-account-item ${!selectedAccountId ? 'topbar-account-item--active' : ''}`}
+                onClick={() => { setSelectedAccountId(null); setAccountOpen(false); }}
               >
                 <div className="topbar-account-avatar">
-                  <User size={13} />
+                  <Mail size={13} />
                 </div>
                 <div className="topbar-account-info">
-                  <span className="topbar-account-name">{account.name}</span>
-                  <span className="topbar-account-email">{account.email}</span>
+                  <span className="topbar-account-name">All Accounts</span>
+                  <span className="topbar-account-email">{accounts.length} connected</span>
                 </div>
-                {activeAccount.id === account.id && <Check size={14} className="topbar-account-check" />}
+                {!selectedAccountId && <Check size={14} className="topbar-account-check" />}
               </button>
+            )}
+            {accounts.map((account) => (
+              <div key={account.id} className="topbar-account-item-wrap">
+                <button
+                  className={`topbar-account-item ${selectedAccountId === account.id ? 'topbar-account-item--active' : ''}`}
+                  onClick={() => { setSelectedAccountId(selectedAccountId === account.id && accounts.length > 1 ? null : account.id); setAccountOpen(false); }}
+                >
+                  <div className="topbar-account-avatar">
+                    <span className="topbar-avatar-letter">
+                      {(account.display_name || account.email)[0].toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="topbar-account-info">
+                    <span className="topbar-account-name">{account.display_name || account.email.split('@')[0]}</span>
+                    <span className="topbar-account-email">{account.email}</span>
+                  </div>
+                  {selectedAccountId === account.id && <Check size={14} className="topbar-account-check" />}
+                </button>
+                <button
+                  className="topbar-account-remove"
+                  onClick={(e) => { e.stopPropagation(); onRemoveAccount(account.id); setAccountOpen(false); }}
+                  title="Remove account"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             ))}
+            <div className="topbar-account-divider" />
+            <button
+              className="topbar-account-item topbar-account-add"
+              onClick={() => { onAddAccount(); setAccountOpen(false); }}
+            >
+              <div className="topbar-account-avatar topbar-account-avatar--add">
+                <Plus size={13} />
+              </div>
+              <div className="topbar-account-info">
+                <span className="topbar-account-name">Add Account</span>
+              </div>
+            </button>
           </div>
         )}
       </div>
@@ -104,6 +146,31 @@ export default function Layout() {
   const touchRef = useRef({ startX: 0, startY: 0, swiping: false });
   const [slideDir, setSlideDir] = useState(null); // 'left' or 'right'
   const prevPath = useRef(location.pathname);
+
+  // Email account state (shared with Inbox via outlet context)
+  const [emailAccounts, setEmailAccounts] = useState([]);
+  const [selectedAccountId, setSelectedAccountId] = useState(null);
+  const [addAccountOpen, setAddAccountOpen] = useState(false);
+
+  const loadEmailAccounts = useCallback(async () => {
+    try {
+      const { accounts: accs } = await getEmailAccounts();
+      setEmailAccounts(accs || []);
+      return accs || [];
+    } catch (_) {
+      return [];
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEmailAccounts();
+  }, [loadEmailAccounts]);
+
+  const handleRemoveAccount = useCallback(async (id) => {
+    await deleteEmailAccount(id);
+    const accs = await loadEmailAccounts();
+    if (selectedAccountId === id) setSelectedAccountId(null);
+  }, [selectedAccountId, loadEmailAccounts]);
 
   // Detect route change and apply slide animation
   useEffect(() => {
@@ -170,15 +237,33 @@ export default function Layout() {
 
   const slideClass = slideDir === 'left' ? 'slide-in-left' : slideDir === 'right' ? 'slide-in-right' : '';
 
+  const inboxContext = {
+    accounts: emailAccounts,
+    selectedAccountId,
+    setSelectedAccountId,
+    addAccountOpen,
+    setAddAccountOpen,
+    loadAccounts: loadEmailAccounts,
+    handleRemoveAccount,
+  };
+
   return (
     <div className="layout">
       <Sidebar />
       <CreditPill />
       <MobileProfileButton />
       <div className={`layout-body ${slideClass}`}>
-        {location.pathname === '/inbox' && <TopBar />}
+        {location.pathname === '/inbox' && (
+          <TopBar
+            accounts={emailAccounts}
+            selectedAccountId={selectedAccountId}
+            setSelectedAccountId={setSelectedAccountId}
+            onAddAccount={() => setAddAccountOpen(true)}
+            onRemoveAccount={handleRemoveAccount}
+          />
+        )}
         <main className="layout-main">
-          <Outlet />
+          <Outlet context={inboxContext} />
         </main>
       </div>
       <BottomBar />

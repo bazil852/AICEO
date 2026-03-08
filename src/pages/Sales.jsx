@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
-import { FileText, Plus, X, ChevronDown, User, DollarSign, Package, Check } from 'lucide-react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { FileText, Plus, X, ChevronDown, User, DollarSign, Package, Check, Loader } from 'lucide-react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -11,6 +11,7 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts';
+import { getSalesRevenue, getSalesCalls, getSalesProducts, addManualSale, updateCallMetadata, syncSalesData } from '../lib/api';
 import './Pages.css';
 import './Sales.css';
 
@@ -22,38 +23,12 @@ const REVENUE_SOURCES = [
 
 const TIME_VIEWS = ['Year', 'Month', 'Week'];
 
-const YEAR_LABELS = ['2020', '2021', '2022', '2023', '2024', '2025'];
-const MONTH_LABELS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'];
-const WEEK_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-const MOCK_DATA_BY_VIEW = {
-  Year: YEAR_LABELS.map((label, i) => ({
-    label,
-    whop: Math.round(14000 + 9000 * Math.sin(i * 0.8) + i * 8000),
-    stripe: Math.round(24000 + 14000 * Math.sin(i * 0.5 + 1) + i * 12000),
-    platform: Math.round(9000 + 7000 * Math.sin(i * 0.9 + 2) + i * 5000),
-  })),
-  Month: MONTH_LABELS.map((label, i) => ({
-    label,
-    whop: Math.round(1200 + 800 * Math.sin(i * 0.7) + i * 320),
-    stripe: Math.round(2000 + 1200 * Math.sin(i * 0.5 + 1) + i * 450),
-    platform: Math.round(800 + 600 * Math.sin(i * 0.9 + 2) + i * 200),
-  })),
-  Week: WEEK_LABELS.map((label, i) => ({
-    label,
-    whop: Math.round(300 + 200 * Math.sin(i * 1.2) + i * 40),
-    stripe: Math.round(500 + 300 * Math.sin(i * 0.8 + 1) + i * 60),
-    platform: Math.round(200 + 150 * Math.sin(i * 1.5 + 2) + i * 30),
-  })),
-};
-
-// Content types: 'photo' (IG square), 'reel' (vertical video - TT/IG), 'video' (horizontal - YT), 'text' (LI/X logo)
 const CONTENT_CASH_DATA = {
-  Year: YEAR_LABELS.map((label, i) => ({
+  Year: ['2021', '2022', '2023', '2024', '2025', '2026'].map((label, i) => ({
     label,
     revenue: Math.round(12000 + 9000 * Math.sin(i * 0.8) + i * 10000),
   })),
-  Month: MONTH_LABELS.map((label, i) => ({
+  Month: ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'].map((label, i) => ({
     label,
     revenue: Math.round(1500 + 1100 * Math.sin(i * 0.5 + 1) + i * 500),
   })),
@@ -68,65 +43,11 @@ const CONTENT_CASH_DATA = {
   ],
 };
 
-const MOCK_PRODUCTS = [
-  { id: 'all', name: 'All Products' },
-  { id: 'coaching', name: 'Coaching Program' },
-  { id: 'course', name: 'Online Course' },
-  { id: 'consulting', name: '1:1 Consulting' },
-  { id: 'downloads', name: 'Digital Downloads' },
-  { id: 'membership', name: 'Membership' },
-];
+// Exported for Inbox.jsx backwards compat — will be replaced with API calls
+export const MOCK_CALLS = [];
 
 const CALL_TYPES = ['Sales call', 'Coaching call', 'Client call', 'Other'];
 const SALES_STATUSES = ['Closed', 'Need to follow up', 'Not a fit'];
-
-export const MOCK_CALLS = [
-  {
-    id: 1,
-    name: 'Call with Alex Thompson',
-    date: 'Mar 5, 2026',
-    summary: 'Discussed coaching program pricing and onboarding timeline. Prospect is comparing with two other providers and needs a proposal by Friday.',
-    recorder: 'fireflies',
-    callType: 'Sales call',
-    status: 'Need to follow up',
-  },
-  {
-    id: 2,
-    name: 'Call with Sarah Chen',
-    date: 'Mar 4, 2026',
-    summary: 'Reviewed progress on Q1 goals and adjusted content strategy. Client is happy with results so far and wants to extend engagement.',
-    recorder: 'fireflies',
-    callType: 'Coaching call',
-    status: null,
-  },
-  {
-    id: 3,
-    name: 'Call with Mike Johnson',
-    date: 'Mar 3, 2026',
-    summary: 'Initial discovery call about digital downloads package. Budget approved, ready to move forward next week with onboarding.',
-    recorder: 'fireflies',
-    callType: 'Sales call',
-    status: 'Closed',
-  },
-  {
-    id: 4,
-    name: 'Call with Emily Davis',
-    date: 'Feb 28, 2026',
-    summary: 'Explored membership tier options and custom branding features. Needs internal approval before committing to annual plan.',
-    recorder: 'fireflies',
-    callType: 'Sales call',
-    status: 'Not a fit',
-  },
-  {
-    id: 5,
-    name: 'Call with Jordan Lee',
-    date: 'Feb 25, 2026',
-    summary: 'Quarterly check-in on consulting engagement. Discussed expanding scope to include marketing automation and lead gen strategy.',
-    recorder: 'fireflies',
-    callType: 'Client call',
-    status: null,
-  },
-];
 
 const RECORDER_LOGOS = {
   fireflies: '/fireflies-square-logo.png',
@@ -146,6 +67,56 @@ export default function Sales() {
   const [productDropdownOpen, setProductDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
+  // Live data state
+  const [chartData, setChartData] = useState([]);
+  const [calls, setCalls] = useState([]);
+  const [products, setProducts] = useState([{ id: 'all', name: 'All Products' }]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+
+  // Call metadata local state (mirrors DB but allows instant UI updates)
+  const [callTypes, setCallTypes] = useState({});
+  const [callStatuses, setCallStatuses] = useState({});
+
+  // Fetch revenue data when view changes
+  const fetchRevenue = useCallback(async () => {
+    const result = await getSalesRevenue(activeView);
+    setChartData(result.data || []);
+  }, [activeView]);
+
+  // Initial load
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const [revenueRes, callsRes, productsRes] = await Promise.all([
+        getSalesRevenue(activeView),
+        getSalesCalls(),
+        getSalesProducts(),
+      ]);
+
+      setChartData(revenueRes.data || []);
+      setCalls(callsRes.calls || []);
+      setProducts(productsRes.products?.length > 0 ? productsRes.products : [{ id: 'all', name: 'All Products' }]);
+
+      // Initialize call metadata from fetched data
+      const types = {};
+      const statuses = {};
+      for (const c of (callsRes.calls || [])) {
+        types[c.id] = c.callType || 'Other';
+        if (c.status) statuses[c.id] = c.status;
+      }
+      setCallTypes(types);
+      setCallStatuses(statuses);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  // Re-fetch revenue when view changes
+  useEffect(() => {
+    fetchRevenue();
+  }, [fetchRevenue]);
+
   useEffect(() => {
     if (!productDropdownOpen) return;
     const handleClick = (e) => {
@@ -156,12 +127,6 @@ export default function Sales() {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [productDropdownOpen]);
-  const [callTypes, setCallTypes] = useState(
-    () => Object.fromEntries(MOCK_CALLS.map((c) => [c.id, c.callType]))
-  );
-  const [callStatuses, setCallStatuses] = useState(
-    () => Object.fromEntries(MOCK_CALLS.filter((c) => c.status).map((c) => [c.id, c.status]))
-  );
 
   const toggleSource = (sourceId) => {
     setVisibleSources((prev) => {
@@ -175,19 +140,18 @@ export default function Sales() {
     });
   };
 
-  const baseData = MOCK_DATA_BY_VIEW[activeView];
-
-  const chartData = useMemo(() => {
-    if (activeProduct === 'all') return baseData;
-    const idx = MOCK_PRODUCTS.findIndex((p) => p.id === activeProduct);
+  const filteredChartData = useMemo(() => {
+    if (activeProduct === 'all') return chartData;
+    // When a specific product is selected, scale down (we don't have per-product breakdown)
+    const idx = products.findIndex((p) => p.id === activeProduct);
     const scale = [0.35, 0.25, 0.2, 0.12, 0.08][idx - 1] || 0.2;
-    return baseData.map((d) => ({
+    return chartData.map((d) => ({
       label: d.label,
-      whop: Math.round(d.whop * scale),
-      stripe: Math.round(d.stripe * scale),
-      platform: Math.round(d.platform * scale),
+      whop: Math.round((d.whop || 0) * scale),
+      stripe: Math.round((d.stripe || 0) * scale),
+      platform: Math.round((d.platform || 0) * scale),
     }));
-  }, [activeProduct, baseData]);
+  }, [activeProduct, chartData, products]);
 
   const contentCashData = CONTENT_CASH_DATA[activeView];
 
@@ -205,7 +169,6 @@ export default function Sales() {
         {pieces.map((piece, i) => {
           let el;
           if (piece.type === 'photo') {
-            // Square photo (Instagram post)
             const s = 24;
             const py = y - offsetY - s;
             offsetY += s + gap;
@@ -213,7 +176,6 @@ export default function Sales() {
               <g key={i}>
                 <rect x={cx - s / 2} y={py} width={s} height={s} rx={4} ry={4}
                   fill={`hsl(${piece.hue}, 35%, 88%)`} stroke="#e5e7eb" strokeWidth={1} />
-                {/* mini landscape icon */}
                 <path d={`M${cx - 5} ${py + s - 6} l4 -5 3 3 2 -2 3 4z`}
                   fill={`hsl(${piece.hue}, 30%, 72%)`} opacity={0.7} />
                 <circle cx={cx - 4} cy={py + 7} r={2.5}
@@ -221,7 +183,6 @@ export default function Sales() {
               </g>
             );
           } else if (piece.type === 'reel') {
-            // Vertical video (TikTok / IG Reel)
             const w = 16;
             const h = 26;
             const py = y - offsetY - h;
@@ -230,13 +191,11 @@ export default function Sales() {
               <g key={i}>
                 <rect x={cx - w / 2} y={py} width={w} height={h} rx={3} ry={3}
                   fill={`hsl(${piece.hue}, 35%, 88%)`} stroke="#e5e7eb" strokeWidth={1} />
-                {/* play triangle */}
                 <path d={`M${cx - 3} ${py + h / 2 - 4} l8 4 -8 4z`}
                   fill={`hsl(${piece.hue}, 30%, 68%)`} opacity={0.6} />
               </g>
             );
           } else if (piece.type === 'video') {
-            // Horizontal video (YouTube)
             const w = 30;
             const h = 18;
             const py = y - offsetY - h;
@@ -245,13 +204,11 @@ export default function Sales() {
               <g key={i}>
                 <rect x={cx - w / 2} y={py} width={w} height={h} rx={3} ry={3}
                   fill={`hsl(${piece.hue}, 35%, 88%)`} stroke="#e5e7eb" strokeWidth={1} />
-                {/* play triangle */}
                 <path d={`M${cx - 3} ${py + h / 2 - 4} l8 4 -8 4z`}
                   fill={`hsl(${piece.hue}, 30%, 68%)`} opacity={0.6} />
               </g>
             );
           } else {
-            // Text-based (LinkedIn / X) — show platform logo circle
             const s = 22;
             const py = y - offsetY - s;
             offsetY += s + gap;
@@ -262,7 +219,7 @@ export default function Sales() {
                   fill={isLinkedIn ? '#0A66C2' : '#14171A'} />
                 <text x={cx} y={py + s / 2} textAnchor="middle" dominantBaseline="central"
                   fill="#fff" fontSize={isLinkedIn ? 8 : 9} fontWeight={800}>
-                  {isLinkedIn ? 'in' : '𝕏'}
+                  {isLinkedIn ? 'in' : '\u{1D54F}'}
                 </text>
               </g>
             );
@@ -290,14 +247,30 @@ export default function Sales() {
 
   const selectedProductName = saleProduct === '__new'
     ? 'New product'
-    : MOCK_PRODUCTS.find((p) => p.id === saleProduct)?.name || '';
+    : products.find((p) => p.id === saleProduct)?.name || '';
 
-  const handleAddSale = () => {
-    // In production this would save to backend
-    closeAddSale();
+  const handleAddSale = async () => {
+    const productName = saleProduct === '__new' ? saleNewProduct : products.find(p => p.id === saleProduct)?.name;
+    if (!productName || !saleAmount) return;
+    try {
+      await addManualSale({
+        product_name: productName,
+        buyer_name: saleBuyer,
+        amount: saleAmount,
+      });
+      closeAddSale();
+      // Refresh revenue data
+      fetchRevenue();
+      // Refresh products
+      getSalesProducts().then(res => {
+        if (res.products?.length) setProducts(res.products);
+      });
+    } catch {
+      // silently fail
+    }
   };
 
-  const handleCallTypeChange = (callId, type) => {
+  const handleCallTypeChange = async (callId, type) => {
     setCallTypes((prev) => ({ ...prev, [callId]: type }));
     if (type !== 'Sales call') {
       setCallStatuses((prev) => {
@@ -306,15 +279,37 @@ export default function Sales() {
         return next;
       });
     }
+    updateCallMetadata(callId, { call_type: type, status: type !== 'Sales call' ? null : callStatuses[callId] }).catch(() => {});
   };
 
-  const handleStatusChange = (callId, status) => {
+  const handleStatusChange = async (callId, status) => {
     setCallStatuses((prev) => ({ ...prev, [callId]: status }));
+    updateCallMetadata(callId, { call_type: callTypes[callId], status }).catch(() => {});
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      await syncSalesData();
+      // Refresh everything
+      const [revenueRes, callsRes, productsRes] = await Promise.all([
+        getSalesRevenue(activeView),
+        getSalesCalls(),
+        getSalesProducts(),
+      ]);
+      setChartData(revenueRes.data || []);
+      setCalls(callsRes.calls || []);
+      if (productsRes.products?.length) setProducts(productsRes.products);
+    } catch {
+      // silently fail
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const renderEndLabel = (source) => (props) => {
     const { index, x, y } = props;
-    if (index !== chartData.length - 1) return null;
+    if (index !== filteredChartData.length - 1) return null;
     const size = 22;
     const r = size / 2;
     return (
@@ -349,6 +344,44 @@ export default function Sales() {
       </g>
     );
   };
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(typeof dateStr === 'number' && dateStr < 1e12 ? dateStr * 1000 : dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <h1 className="page-title">Sales</h1>
+        <div className="sales-chart-section">
+          <div className="skeleton-card">
+            <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+              <div className="skeleton" style={{ width: 80, height: 36, borderRadius: 20 }} />
+              <div className="skeleton" style={{ width: 110, height: 36, borderRadius: 20 }} />
+            </div>
+            <div className="skeleton skeleton-chart" />
+          </div>
+        </div>
+        <div style={{ marginTop: 32 }}>
+          <div className="skeleton skeleton-title" />
+          {[1, 2, 3].map(i => (
+            <div key={i} className="skeleton-card" style={{ marginBottom: 12 }}>
+              <div className="skeleton-row">
+                <div className="skeleton skeleton-avatar" />
+                <div className="skeleton-lines">
+                  <div className="skeleton skeleton-text" />
+                  <div className="skeleton skeleton-text--short skeleton-text" />
+                </div>
+              </div>
+              <div className="skeleton skeleton-text--medium skeleton-text" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-container">
@@ -424,7 +457,7 @@ export default function Sales() {
               <div className="sales-chart-graph">
                 {activeTab === 'revenue' ? (
                   <ResponsiveContainer width="100%" height={320}>
-                    <AreaChart data={chartData} margin={{ top: 10, right: 40, left: 0, bottom: 0 }}>
+                    <AreaChart data={filteredChartData} margin={{ top: 10, right: 40, left: 0, bottom: 0 }}>
                       <defs>
                         {REVENUE_SOURCES.map((s) => (
                           <linearGradient key={s.id} id={`gradient-${s.id}`} x1="0" y1="0" x2="0" y2="1">
@@ -519,7 +552,7 @@ export default function Sales() {
               {activeTab === 'revenue' && (
                 <div className="sales-products-sidebar">
                   <h3 className="sales-products-title">Products</h3>
-                  {MOCK_PRODUCTS.map((p) => (
+                  {products.map((p) => (
                     <button
                       key={p.id}
                       className={`sales-product-item ${activeProduct === p.id ? 'sales-product-item--active' : ''}`}
@@ -537,74 +570,89 @@ export default function Sales() {
 
       {/* Call Intelligence Section */}
       <div className="sales-calls-section">
-        <h2 className="sales-section-title">Call Intelligence</h2>
-        <div className="sales-calls-grid">
-          {MOCK_CALLS.map((call) => {
-            const currentType = callTypes[call.id];
-            const currentStatus = callStatuses[call.id];
-            return (
-              <div key={call.id} className="sales-call-card">
-                <div className="sales-call-left">
-                  <img
-                    src={RECORDER_LOGOS[call.recorder]}
-                    alt={call.recorder}
-                    className="sales-call-logo"
-                  />
-                </div>
-                <div className="sales-call-middle">
-                  <div className="sales-call-name-row">
-                    <h4 className="sales-call-name">{call.name}</h4>
-                    <span className="sales-call-date">{call.date}</span>
+        <div className="sales-calls-header">
+          <h2 className="sales-section-title">Call Intelligence</h2>
+          <button
+            className="sales-add-sale-btn"
+            onClick={handleSync}
+            disabled={syncing}
+          >
+            {syncing ? <><Loader size={14} className="settings-spinner" /> Syncing...</> : 'Sync Calls'}
+          </button>
+        </div>
+        {calls.length === 0 && !loading ? (
+          <div className="sales-empty-calls">
+            <p>No calls yet. Connect Fireflies or Fathom in Settings to sync your call recordings.</p>
+          </div>
+        ) : (
+          <div className="sales-calls-grid">
+            {calls.map((call) => {
+              const currentType = callTypes[call.id] || 'Other';
+              const currentStatus = callStatuses[call.id];
+              return (
+                <div key={call.id} className="sales-call-card">
+                  <div className="sales-call-left">
+                    <img
+                      src={RECORDER_LOGOS[call.recorder] || RECORDER_LOGOS.fireflies}
+                      alt={call.recorder}
+                      className="sales-call-logo"
+                    />
                   </div>
-                  <p className="sales-call-summary">{call.summary}</p>
-                  <div className="sales-call-tag-row">
-                    <span className="sales-call-row-label">Call Type</span>
-                    <div className="sales-pill-group">
-                      {CALL_TYPES.map((type) => (
-                        <button
-                          key={type}
-                          className={`sales-pill-option ${currentType === type ? 'sales-pill-option--active' : ''}`}
-                          onClick={() => handleCallTypeChange(call.id, type)}
-                        >
-                          {type}
-                        </button>
-                      ))}
+                  <div className="sales-call-middle">
+                    <div className="sales-call-name-row">
+                      <h4 className="sales-call-name">{call.name}</h4>
+                      <span className="sales-call-date">{formatDate(call.date)}</span>
                     </div>
-                  </div>
-                  {currentType === 'Sales call' && (
+                    <p className="sales-call-summary">{call.summary}</p>
                     <div className="sales-call-tag-row">
-                      <span className="sales-call-row-label">After Call Status</span>
+                      <span className="sales-call-row-label">Call Type</span>
                       <div className="sales-pill-group">
-                        {SALES_STATUSES.map((status) => {
-                          const slug = status === 'Closed' ? 'closed' : status === 'Need to follow up' ? 'follow-up' : 'not-fit';
-                          return (
-                            <button
-                              key={status}
-                              className={`sales-pill-option ${currentStatus === status ? `sales-pill-option--active sales-pill-option--${slug}` : ''}`}
-                              onClick={() => handleStatusChange(call.id, status)}
-                            >
-                              {status}
-                            </button>
-                          );
-                        })}
+                        {CALL_TYPES.map((type) => (
+                          <button
+                            key={type}
+                            className={`sales-pill-option ${currentType === type ? 'sales-pill-option--active' : ''}`}
+                            onClick={() => handleCallTypeChange(call.id, type)}
+                          >
+                            {type}
+                          </button>
+                        ))}
                       </div>
                     </div>
-                  )}
+                    {currentType === 'Sales call' && (
+                      <div className="sales-call-tag-row">
+                        <span className="sales-call-row-label">After Call Status</span>
+                        <div className="sales-pill-group">
+                          {SALES_STATUSES.map((status) => {
+                            const slug = status === 'Closed' ? 'closed' : status === 'Need to follow up' ? 'follow-up' : 'not-fit';
+                            return (
+                              <button
+                                key={status}
+                                className={`sales-pill-option ${currentStatus === status ? `sales-pill-option--active sales-pill-option--${slug}` : ''}`}
+                                onClick={() => handleStatusChange(call.id, status)}
+                              >
+                                {status}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="sales-call-right">
+                    {currentType === 'Sales call' && (
+                      <button className="sales-action-btn">Analyze objections</button>
+                    )}
+                    <button className="sales-action-btn">Write email follow up</button>
+                    <button className="sales-action-btn">
+                      <FileText size={14} />
+                      Add to context
+                    </button>
+                  </div>
                 </div>
-                <div className="sales-call-right">
-                  {currentType === 'Sales call' && (
-                    <button className="sales-action-btn">Analyze objections</button>
-                  )}
-                  <button className="sales-action-btn">Write email follow up</button>
-                  <button className="sales-action-btn">
-                    <FileText size={14} />
-                    Add to context
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Add Sale Modal */}
@@ -645,7 +693,7 @@ export default function Sales() {
                 </button>
                 {productDropdownOpen && (
                   <div className="sales-dropdown-menu">
-                    {MOCK_PRODUCTS.filter((p) => p.id !== 'all').map((p) => (
+                    {products.filter((p) => p.id !== 'all').map((p) => (
                       <button
                         key={p.id}
                         className={`sales-dropdown-item ${saleProduct === p.id ? 'sales-dropdown-item--selected' : ''}`}

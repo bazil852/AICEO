@@ -1,9 +1,21 @@
-import { useState } from 'react';
-import { X, UserPlus, Play, User } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { X, UserPlus, Play, User, Loader, RefreshCw, ExternalLink } from 'lucide-react';
+import { getOutlierCreators, addOutlierCreator, deleteOutlierCreator, getOutlierVideos } from '../lib/api';
 import './Pages.css';
 import './OutlierDetector.css';
 
 const PLATFORMS = [
+  {
+    id: 'youtube',
+    name: 'YouTube',
+    color: '#FF0000',
+    bgLight: '#fff5f5',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="od-platform-icon">
+        <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.546 12 3.546 12 3.546s-7.505 0-9.377.504A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.504 9.376.504 9.376.504s7.505 0 9.377-.504a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+      </svg>
+    ),
+  },
   {
     id: 'instagram',
     name: 'Instagram',
@@ -28,35 +40,40 @@ const PLATFORMS = [
       </svg>
     ),
   },
-  {
-    id: 'youtube',
-    name: 'YouTube',
-    color: '#FF0000',
-    bgLight: '#fff5f5',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="currentColor" className="od-platform-icon">
-        <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.546 12 3.546 12 3.546s-7.505 0-9.377.504A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.504 9.376.504 9.376.504s7.505 0 9.377-.504a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-      </svg>
-    ),
-  },
 ];
 
 const METRICS = ['Views', 'Likes', 'Comments'];
 const MULTIPLIERS = ['2x', '5x', '10x'];
 
-const MOCK_OUTLIER_CARDS = [
-  { id: 1, creatorUsername: '@garyvee', platform: 'instagram', multiplier: 12.4, metric: 'Views', metricValue: '2.4M', avgValue: '194K', thumbnailHue: 280 },
-  { id: 2, creatorUsername: '@mrbeast', platform: 'youtube', multiplier: 8.7, metric: 'Likes', metricValue: '1.8M', avgValue: '207K', thumbnailHue: 200 },
-  { id: 3, creatorUsername: '@charlidamelio', platform: 'tiktok', multiplier: 5.2, metric: 'Views', metricValue: '18M', avgValue: '3.5M', thumbnailHue: 320 },
-  { id: 4, creatorUsername: '@garyvee', platform: 'tiktok', multiplier: 4.8, metric: 'Comments', metricValue: '24K', avgValue: '5K', thumbnailHue: 160 },
-  { id: 5, creatorUsername: '@mrbeast', platform: 'youtube', multiplier: 6.1, metric: 'Views', metricValue: '45M', avgValue: '7.4M', thumbnailHue: 40 },
-  { id: 6, creatorUsername: '@charlidamelio', platform: 'instagram', multiplier: 3.5, metric: 'Likes', metricValue: '890K', avgValue: '254K', thumbnailHue: 260 },
-  { id: 7, creatorUsername: '@garyvee', platform: 'youtube', multiplier: 7.3, metric: 'Views', metricValue: '5.1M', avgValue: '699K', thumbnailHue: 120 },
-  { id: 8, creatorUsername: '@charlidamelio', platform: 'tiktok', multiplier: 2.8, metric: 'Comments', metricValue: '15K', avgValue: '5.4K', thumbnailHue: 350 },
-];
-
 function getPlatform(id) {
   return PLATFORMS.find((p) => p.id === id);
+}
+
+function formatNumber(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return n.toString();
+}
+
+function getMultiplier(video, metric) {
+  if (metric === 'Views') return video.views_multiplier;
+  if (metric === 'Likes') return video.likes_multiplier;
+  if (metric === 'Comments') return video.comments_multiplier;
+  return video.views_multiplier;
+}
+
+function getMetricValue(video, metric) {
+  if (metric === 'Views') return video.views;
+  if (metric === 'Likes') return video.likes;
+  if (metric === 'Comments') return video.comments;
+  return video.views;
+}
+
+function getAvgValue(creator, metric) {
+  if (metric === 'Views') return creator.avg_views;
+  if (metric === 'Likes') return creator.avg_likes;
+  if (metric === 'Comments') return creator.avg_comments;
+  return creator.avg_views;
 }
 
 export default function OutlierDetector() {
@@ -64,6 +81,10 @@ export default function OutlierDetector() {
   const [selectedPlatform, setSelectedPlatform] = useState(null);
   const [usernameInput, setUsernameInput] = useState('');
   const [creators, setCreators] = useState([]);
+  const [videos, setVideos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState('');
 
   const [activeMetric, setActiveMetric] = useState('Views');
   const [activeMultiplier, setActiveMultiplier] = useState(null);
@@ -71,36 +92,80 @@ export default function OutlierDetector() {
   const [activePlatformFilter, setActivePlatformFilter] = useState(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
-  const handleFollowCreator = () => {
+  // Load creators and videos on mount
+  useEffect(() => {
+    Promise.all([getOutlierCreators(), getOutlierVideos()])
+      .then(([c, v]) => {
+        setCreators(c.creators || []);
+        setVideos(v.videos || []);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const refreshVideos = useCallback(() => {
+    getOutlierVideos().then(({ videos: v }) => setVideos(v || [])).catch(() => {});
+  }, []);
+
+  const handleFollowCreator = async () => {
     if (!usernameInput.trim() || !selectedPlatform) return;
     const username = usernameInput.trim().startsWith('@') ? usernameInput.trim() : '@' + usernameInput.trim();
-    setCreators((prev) => [
-      ...prev,
-      { id: Date.now().toString(), username, platform: selectedPlatform },
-    ]);
-    setUsernameInput('');
-    setSelectedPlatform(null);
-    setAddCreatorOpen(false);
+
+    setAdding(true);
+    setAddError('');
+    try {
+      const { creator } = await addOutlierCreator(selectedPlatform, username);
+      setCreators((prev) => {
+        const exists = prev.find((c) => c.id === creator.id);
+        if (exists) return prev.map((c) => c.id === creator.id ? creator : c);
+        return [creator, ...prev];
+      });
+      setUsernameInput('');
+      setSelectedPlatform(null);
+      setAddCreatorOpen(false);
+      // Refresh videos
+      refreshVideos();
+    } catch (err) {
+      setAddError(err.message);
+    } finally {
+      setAdding(false);
+    }
   };
 
-  const handleRemoveCreator = (id) => {
+  const handleRemoveCreator = async (id) => {
     setCreators((prev) => prev.filter((c) => c.id !== id));
+    setVideos((prev) => prev.filter((v) => v.creator_id !== id));
     if (activeCreatorFilter === id) setActiveCreatorFilter(null);
     setDeleteConfirmId(null);
+    deleteOutlierCreator(id).catch(() => {});
   };
 
-  const filteredCards = MOCK_OUTLIER_CARDS.filter((card) => {
+  // Apply filters
+  const filteredVideos = videos.filter((video) => {
+    const multiplier = getMultiplier(video, activeMetric);
+
     if (activeMultiplier) {
       const threshold = parseFloat(activeMultiplier);
-      if (card.multiplier < threshold) return false;
+      if (multiplier < threshold) return false;
+    } else {
+      // Default: show 2x+ outliers
+      if (multiplier < 2) return false;
     }
-    if (activeCreatorFilter) {
-      const creator = creators.find((c) => c.id === activeCreatorFilter);
-      if (creator && card.creatorUsername !== creator.username) return false;
-    }
-    if (activePlatformFilter && card.platform !== activePlatformFilter) return false;
+
+    if (activeCreatorFilter && video.creator_id !== activeCreatorFilter) return false;
+    if (activePlatformFilter && video.platform !== activePlatformFilter) return false;
+
     return true;
-  });
+  }).sort((a, b) => getMultiplier(b, activeMetric) - getMultiplier(a, activeMetric));
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <h1 className="page-title">Outlier Detector</h1>
+        <div className="od-loading"><Loader size={24} className="od-spin" /> Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-container">
@@ -118,7 +183,7 @@ export default function OutlierDetector() {
                 <UserPlus size={18} />
                 Add Creators to Follow
               </button>
-              <p className="od-add-creator-hint">Or press Ctrl+V with a creator's URL in your clipboard.</p>
+              <p className="od-add-creator-hint">Follow creators to detect their outlier content.</p>
             </>
           ) : (
             <div className="od-add-creator-flow">
@@ -154,7 +219,7 @@ export default function OutlierDetector() {
                     </div>
                     <button
                       className="od-change-platform"
-                      onClick={() => setSelectedPlatform(null)}
+                      onClick={() => { setSelectedPlatform(null); setAddError(''); }}
                     >
                       Change
                     </button>
@@ -163,20 +228,22 @@ export default function OutlierDetector() {
                     <input
                       type="text"
                       className="od-username-input"
-                      placeholder="@username"
+                      placeholder="@username or channel name"
                       value={usernameInput}
                       onChange={(e) => setUsernameInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleFollowCreator()}
                       autoFocus
+                      disabled={adding}
                     />
                     <button
                       className="od-follow-btn"
-                      disabled={!usernameInput.trim()}
+                      disabled={!usernameInput.trim() || adding}
                       onClick={handleFollowCreator}
                     >
-                      Follow Creator
+                      {adding ? <Loader size={14} className="od-spin" /> : 'Follow Creator'}
                     </button>
                   </div>
+                  {addError && <span className="od-add-error">{addError}</span>}
                 </>
               )}
               <button
@@ -185,6 +252,7 @@ export default function OutlierDetector() {
                   setAddCreatorOpen(false);
                   setSelectedPlatform(null);
                   setUsernameInput('');
+                  setAddError('');
                 }}
               >
                 Cancel
@@ -200,12 +268,16 @@ export default function OutlierDetector() {
               return (
                 <div key={c.id} className="od-creator-chip">
                   <div className="od-creator-avatar">
-                    <User size={14} />
+                    {c.avatar_url ? (
+                      <img src={c.avatar_url} alt="" className="od-creator-avatar-img" referrerPolicy="no-referrer" />
+                    ) : (
+                      <User size={14} />
+                    )}
                   </div>
                   <span className="od-creator-chip-plat" style={{ color: plat?.color }}>
                     {plat?.icon}
                   </span>
-                  <span className="od-creator-chip-name">{c.username}</span>
+                  <span className="od-creator-chip-name">{c.display_name || c.username}</span>
                   <button
                     className="od-creator-chip-remove"
                     onClick={() => setDeleteConfirmId(c.id)}
@@ -220,125 +292,164 @@ export default function OutlierDetector() {
       </div>
 
       {/* Filters */}
-      <div className="od-filters">
-        <div className="od-filter-group">
-          <span className="od-filter-label">Metric</span>
-          <div className="od-filter-pills">
-            {METRICS.map((m) => (
-              <button
-                key={m}
-                className={`od-filter-pill ${activeMetric === m ? 'od-filter-pill--active' : ''}`}
-                onClick={() => setActiveMetric(m)}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="od-filter-group">
-          <span className="od-filter-label">Outlier</span>
-          <div className="od-filter-pills">
-            {MULTIPLIERS.map((m) => (
-              <button
-                key={m}
-                className={`od-filter-pill ${activeMultiplier === m ? 'od-filter-pill--active' : ''}`}
-                onClick={() => setActiveMultiplier(activeMultiplier === m ? null : m)}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {creators.length > 0 && (
+      {videos.length > 0 && (
+        <div className="od-filters">
           <div className="od-filter-group">
-            <span className="od-filter-label">Creator</span>
+            <span className="od-filter-label">Metric</span>
             <div className="od-filter-pills">
-              {creators.map((c) => (
+              {METRICS.map((m) => (
                 <button
-                  key={c.id}
-                  className={`od-filter-pill od-filter-pill--creator ${activeCreatorFilter === c.id ? 'od-filter-pill--active' : ''}`}
-                  onClick={() => setActiveCreatorFilter(activeCreatorFilter === c.id ? null : c.id)}
+                  key={m}
+                  className={`od-filter-pill ${activeMetric === m ? 'od-filter-pill--active' : ''}`}
+                  onClick={() => setActiveMetric(m)}
                 >
-                  <span className="od-filter-pill-avatar"><User size={10} /></span>
-                  {c.username}
+                  {m}
                 </button>
               ))}
             </div>
           </div>
-        )}
 
-        <div className="od-filter-group">
-          <span className="od-filter-label">Platform</span>
-          <div className="od-filter-pills">
-            {PLATFORMS.map((p) => (
-              <button
-                key={p.id}
-                className={`od-filter-pill ${activePlatformFilter === p.id ? 'od-filter-pill--active' : ''}`}
-                onClick={() => setActivePlatformFilter(activePlatformFilter === p.id ? null : p.id)}
-              >
-                {p.icon}
-                {p.name}
-              </button>
-            ))}
+          <div className="od-filter-group">
+            <span className="od-filter-label">Outlier</span>
+            <div className="od-filter-pills">
+              {MULTIPLIERS.map((m) => (
+                <button
+                  key={m}
+                  className={`od-filter-pill ${activeMultiplier === m ? 'od-filter-pill--active' : ''}`}
+                  onClick={() => setActiveMultiplier(activeMultiplier === m ? null : m)}
+                >
+                  {m}+
+                </button>
+              ))}
+            </div>
           </div>
+
+          {creators.length > 1 && (
+            <div className="od-filter-group">
+              <span className="od-filter-label">Creator</span>
+              <div className="od-filter-pills">
+                {creators.map((c) => (
+                  <button
+                    key={c.id}
+                    className={`od-filter-pill od-filter-pill--creator ${activeCreatorFilter === c.id ? 'od-filter-pill--active' : ''}`}
+                    onClick={() => setActiveCreatorFilter(activeCreatorFilter === c.id ? null : c.id)}
+                  >
+                    {c.avatar_url ? (
+                      <img src={c.avatar_url} alt="" className="od-filter-pill-img" referrerPolicy="no-referrer" />
+                    ) : (
+                      <span className="od-filter-pill-avatar"><User size={10} /></span>
+                    )}
+                    {c.display_name || c.username}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {creators.some((c) => c.platform !== creators[0]?.platform) && (
+            <div className="od-filter-group">
+              <span className="od-filter-label">Platform</span>
+              <div className="od-filter-pills">
+                {PLATFORMS.filter((p) => creators.some((c) => c.platform === p.id)).map((p) => (
+                  <button
+                    key={p.id}
+                    className={`od-filter-pill ${activePlatformFilter === p.id ? 'od-filter-pill--active' : ''}`}
+                    onClick={() => setActivePlatformFilter(activePlatformFilter === p.id ? null : p.id)}
+                  >
+                    {p.icon}
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Content Grid */}
       <div className="od-grid">
-        {filteredCards.map((card) => {
-          const plat = getPlatform(card.platform);
+        {filteredVideos.map((video) => {
+          const creator = video.outlier_creators || {};
+          const plat = getPlatform(video.platform);
+          const multiplier = getMultiplier(video, activeMetric);
+          const metricValue = getMetricValue(video, activeMetric);
+          const avgValue = getAvgValue(creator, activeMetric);
+
           return (
-            <div key={card.id} className={`od-card ${card.platform === 'youtube' ? 'od-card--landscape' : ''}`}>
-              <div
-                className={`od-card-thumbnail ${card.platform === 'youtube' ? 'od-card-thumbnail--landscape' : ''}`}
-                style={{
-                  background: `linear-gradient(135deg, hsl(${card.thumbnailHue}, 40%, 92%) 0%, hsl(${card.thumbnailHue + 30}, 35%, 85%) 100%)`,
-                }}
-              >
-                <div className="od-card-play">
-                  <Play size={24} fill="white" />
+            <div key={video.id} className="od-card od-card--landscape">
+              <a href={video.url} target="_blank" rel="noopener noreferrer" className="od-card-link">
+                <div className="od-card-thumbnail od-card-thumbnail--landscape">
+                  {video.thumbnail_url ? (
+                    <img
+                      src={video.thumbnail_url.replace('i.ytimg.com', 'img.youtube.com')}
+                      alt=""
+                      className="od-card-thumb-img"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      crossOrigin="anonymous"
+                      onError={(e) => {
+                        if (!e.target.dataset.retried) {
+                          e.target.dataset.retried = '1';
+                          e.target.src = `https://img.youtube.com/vi/${video.video_id}/mqdefault.jpg`;
+                        } else {
+                          e.target.style.display = 'none';
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="od-card-thumb-placeholder" />
+                  )}
+                  <div className="od-card-play">
+                    <Play size={24} fill="white" />
+                  </div>
+                  <div className="od-card-platform-badge" style={{ color: plat?.color }}>
+                    {plat?.icon}
+                  </div>
                 </div>
-                <div className="od-card-platform-badge" style={{ color: plat?.color }}>
-                  {plat?.icon}
-                </div>
-              </div>
+              </a>
               <div className="od-card-info">
                 <div className="od-card-info-left">
                   <div className="od-card-multiplier">
-                    <span className="od-card-multiplier-value">{card.multiplier}x</span>
-                    <span className="od-card-multiplier-label">{card.metric}</span>
+                    <span className="od-card-multiplier-value">{multiplier}x</span>
+                    <span className="od-card-multiplier-label">{activeMetric}</span>
                   </div>
                   <div className="od-card-stats">
-                    {card.metricValue} vs avg {card.avgValue}
+                    {formatNumber(metricValue)} vs avg {formatNumber(avgValue)}
                   </div>
-                  <div className="od-card-creator">{card.creatorUsername}</div>
+                  <div className="od-card-title" title={video.title}>{video.title}</div>
+                  <div className="od-card-creator">
+                    {creator.avatar_url && <img src={creator.avatar_url} alt="" className="od-card-creator-img" referrerPolicy="no-referrer" />}
+                    {creator.display_name || creator.username}
+                  </div>
                 </div>
-                <button className="od-add-context-btn">Add to context</button>
               </div>
             </div>
           );
         })}
       </div>
 
-      {filteredCards.length === 0 && (
+      {filteredVideos.length === 0 && creators.length > 0 && (
         <div className="od-empty">
-          No outlier content matches your filters.
+          No outlier content matches your filters. Try lowering the multiplier threshold.
+        </div>
+      )}
+
+      {creators.length === 0 && (
+        <div className="od-empty">
+          Follow creators to start detecting their viral outlier content.
         </div>
       )}
 
       {deleteConfirmId && (
         <div className="od-modal-overlay" onClick={() => setDeleteConfirmId(null)}>
           <div className="od-modal" onClick={(e) => e.stopPropagation()}>
-            <p className="od-modal-text">Are you sure you want to delete this creator?</p>
+            <p className="od-modal-text">Remove this creator and all their videos?</p>
             <div className="od-modal-actions">
               <button className="od-modal-cancel" onClick={() => setDeleteConfirmId(null)}>
                 Cancel
               </button>
               <button className="od-modal-confirm" onClick={() => handleRemoveCreator(deleteConfirmId)}>
-                Delete
+                Remove
               </button>
             </div>
           </div>

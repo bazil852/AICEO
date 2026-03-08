@@ -1,0 +1,25 @@
+{
+  "name": "aiceo-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.0",
+    "busboy": "^1.6.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^5.1.0",
+    "googleapis": "^171.4.0",
+    "imapflow": "^1.2.12",
+    "mailparser": "^3.9.3",
+    "mammoth": "^1.8.0",
+    "nodemailer": "^8.0.1",
+    "openai": "^4.80.0",
+    "pdf-parse": "^1.1.1",
+    "stripe": "^20.4.1",
+    "youtube-caption-extractor": "^1.9.1"
+  }
+}
