@@ -9,6 +9,8 @@ import {
 import './Pages.css';
 import './Inbox.css';
 
+export const MOCK_EMAILS = [];
+
 const FOLDERS = [
   { key: 'inbox', label: 'Inbox' },
   { key: 'starred', label: 'Starred' },

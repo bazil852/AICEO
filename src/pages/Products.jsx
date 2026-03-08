@@ -7,6 +7,8 @@ import './Products.css';
 const PRODUCT_TYPES = ['Coaching', 'Course', 'SAAS', 'LeadMagnet', 'Community'];
 const PRICE_MODES = ['One-time', 'Monthly'];
 
+export const INITIAL_PRODUCTS = [];
+
 export default function Products() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
