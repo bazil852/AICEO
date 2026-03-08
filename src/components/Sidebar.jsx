@@ -47,6 +47,9 @@ function InboxIcon({ size = 20 }) {
 function ProductsIcon({ size = 20 }) {
   return <ImgIcon src="/icon-products.png" alt="Products" size={size} />;
 }
+function CrmIcon({ size = 20 }) {
+  return <ImgIcon src="/icon-crm.png" alt="CRM" size={size} />;
+}
 function CreditsIcon({ size = 16 }) {
   return <ImgIcon src="/icon-credits.png" alt="Credits" size={size} />;
 }
@@ -78,6 +81,7 @@ const navItems = [
       { to: '/products', label: 'Products', icon: ProductsIcon },
     ],
   },
+  { to: '/crm', label: 'CRM', icon: CrmIcon },
 ];
 
 export default function Sidebar() {

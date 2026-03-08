@@ -11,6 +11,7 @@ import Sales from './pages/Sales';
 import Products from './pages/Products';
 import Settings from './pages/Settings';
 import OutlierDetector from './pages/OutlierDetector';
+import CRM from './pages/CRM';
 
 function App() {
   const { user } = useAuth();
@@ -30,6 +31,7 @@ function App() {
         <Route path="/inbox" element={<Inbox />} />
         <Route path="/sales" element={<Sales />} />
         <Route path="/products" element={<Products />} />
+        <Route path="/crm" element={<CRM />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>

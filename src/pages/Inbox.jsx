@@ -4,7 +4,7 @@ import { MOCK_CALLS } from './Sales';
 import './Pages.css';
 import './Inbox.css';
 
-const MOCK_EMAILS = [
+export const MOCK_EMAILS = [
   {
     id: 1,
     from: 'Alex Thompson',

@@ -6,7 +6,7 @@ import './Products.css';
 const PRODUCT_TYPES = ['Coaching', 'Course', 'SAAS', 'LeadMagnet', 'Community'];
 const PRICE_MODES = ['One-time', 'Monthly'];
 
-const INITIAL_PRODUCTS = [
+export const INITIAL_PRODUCTS = [
   {
     id: 1,
     name: 'Premium Coaching Program',
