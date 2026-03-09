@@ -2,10 +2,20 @@ const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const HOST = 'instagram-scraper-api2.p.rapidapi.com';
 
 /**
+ * Extract username from an Instagram URL or clean up input.
+ */
+function extractUsername(input) {
+  // Handle Instagram URLs like https://www.instagram.com/username/ or https://instagram.com/username/reels/
+  const urlMatch = input.match(/instagram\.com\/([a-zA-Z0-9_.]+)/i);
+  if (urlMatch && !['p', 'reel', 'reels', 'stories', 'explore'].includes(urlMatch[1])) return urlMatch[1];
+  return input.replace(/^@/, '').trim();
+}
+
+/**
  * Resolve an Instagram username to profile info.
  */
 export async function resolveProfile(username) {
-  const handle = username.replace(/^@/, '');
+  const handle = extractUsername(username);
   const data = await igFetch('/v1/info', { username_or_id_or_url: handle });
 
   const user = data?.data;
@@ -24,8 +34,8 @@ export async function resolveProfile(username) {
  * Fetch recent posts/reels from an Instagram user.
  * Returns up to `count` items with engagement stats.
  */
-export async function fetchRecentPosts(username, count = 30) {
-  const handle = username.replace(/^@/, '');
+export async function fetchRecentPosts(username, count = 50) {
+  const handle = extractUsername(username);
   const posts = [];
   let paginationToken = null;
 

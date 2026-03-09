@@ -542,6 +542,26 @@
   border-color: var(--brand-red);
 }
 
+.sales-source-logo-btn--disconnected {
+  opacity: 0.3;
+  cursor: default;
+  filter: grayscale(100%);
+}
+
+.sales-source-logo-btn--disconnected:hover {
+  border-color: transparent;
+  opacity: 0.45;
+}
+
+.sales-source-divider {
+  display: inline-block;
+  width: 1px;
+  height: 24px;
+  background: var(--border-light);
+  margin: 0 4px;
+  align-self: center;
+}
+
 .sales-source-logo-img {
   width: 100%;
   height: 100%;

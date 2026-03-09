@@ -105,6 +105,24 @@ export async function deleteContentItem(id) {
   });
 }
 
+/**
+ * Add an outlier video to content context.
+ * Backend saves as content_item and fetches transcript for YouTube.
+ */
+export async function addOutlierToContext(video) {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_URL}/api/content-items/from-outlier`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(video),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Failed to add to context' }));
+    throw new Error(err.error);
+  }
+  return res.json();
+}
+
 // ─── Outlier Detector ───
 
 export async function getOutlierCreators() {
@@ -555,4 +573,20 @@ export async function deleteEmail(id) {
     method: 'DELETE',
     headers,
   });
+}
+
+// ─── Image Generation (Nano Banana 2) ───
+
+export async function generateImage(prompt, platform, brandData) {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_URL}/api/generate/image`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, platform, brandData }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Image generation failed' }));
+    throw new Error(err.error);
+  }
+  return res.json();
 }

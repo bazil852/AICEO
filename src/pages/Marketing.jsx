@@ -143,19 +143,13 @@ async function streamToolResponse(messages, systemPrompt, onChunk, abortSignal) 
     },
     body: JSON.stringify({
       model: 'grok-3-fast',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages,
-      ],
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
       stream: true,
     }),
     signal: abortSignal,
   });
 
-  if (!res.ok) {
-    const error = await res.text();
-    throw new Error(error);
-  }
+  if (!res.ok) throw new Error(await res.text());
 
   const reader = res.body?.getReader();
   if (!reader) throw new Error('No response body');
@@ -167,30 +161,20 @@ async function streamToolResponse(messages, systemPrompt, onChunk, abortSignal) 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
     buffer = lines.pop() || '';
-
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed || !trimmed.startsWith('data: ')) continue;
       const data = trimmed.slice(6);
       if (data === '[DONE]') continue;
-
       try {
-        const parsed = JSON.parse(data);
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) {
-          fullContent += delta;
-          onChunk(fullContent);
-        }
-      } catch {
-        // skip malformed chunks
-      }
+        const delta = JSON.parse(data).choices?.[0]?.delta?.content;
+        if (delta) { fullContent += delta; onChunk(fullContent); }
+      } catch { /* skip */ }
     }
   }
-
   return fullContent;
 }
 

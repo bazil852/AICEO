@@ -11,7 +11,7 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts';
-import { getSalesRevenue, getSalesCalls, getSalesProducts, addManualSale, updateCallMetadata, syncSalesData } from '../lib/api';
+import { getSalesRevenue, getSalesCalls, getSalesProducts, addManualSale, updateCallMetadata, syncSalesData, getIntegrations } from '../lib/api';
 import './Pages.css';
 import './Sales.css';
 
@@ -73,6 +73,7 @@ export default function Sales() {
   const [products, setProducts] = useState([{ id: 'all', name: 'All Products' }]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [connectedSources, setConnectedSources] = useState(new Set(['platform'])); // platform always on
 
   // Call metadata local state (mirrors DB but allows instant UI updates)
   const [callTypes, setCallTypes] = useState({});
@@ -88,15 +89,26 @@ export default function Sales() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const [revenueRes, callsRes, productsRes] = await Promise.all([
+      const [revenueRes, callsRes, productsRes, integrationsRes] = await Promise.all([
         getSalesRevenue(activeView),
         getSalesCalls(),
         getSalesProducts(),
+        getIntegrations(),
       ]);
 
       setChartData(revenueRes.data || []);
       setCalls(callsRes.calls || []);
       setProducts(productsRes.products?.length > 0 ? productsRes.products : [{ id: 'all', name: 'All Products' }]);
+
+      // Determine which payment processors are connected
+      const connected = new Set(['platform']); // always on
+      for (const intg of (integrationsRes.integrations || [])) {
+        if (intg.is_active && (intg.provider === 'stripe' || intg.provider === 'whop')) {
+          connected.add(intg.provider);
+        }
+      }
+      setConnectedSources(connected);
+      setVisibleSources(connected);
 
       // Initialize call metadata from fetched data
       const types = {};
@@ -129,6 +141,8 @@ export default function Sales() {
   }, [productDropdownOpen]);
 
   const toggleSource = (sourceId) => {
+    // Only allow toggling connected sources
+    if (!connectedSources.has(sourceId)) return;
     setVisibleSources((prev) => {
       const next = new Set(prev);
       if (next.has(sourceId)) {
@@ -410,10 +424,27 @@ export default function Sales() {
             <div className="sales-chart-header">
               {activeTab === 'revenue' ? (
                 <div className="sales-source-filters">
-                  {REVENUE_SOURCES.map((s) => (
+                  {REVENUE_SOURCES.filter(s => connectedSources.has(s.id)).map((s) => (
                     <button
                       key={s.id}
                       className={`sales-source-logo-btn ${visibleSources.has(s.id) ? 'sales-source-logo-btn--active' : ''}`}
+                      onClick={() => toggleSource(s.id)}
+                    >
+                      <img
+                        src={s.logo}
+                        alt={s.name}
+                        className={`sales-source-logo-img ${s.rounded ? 'sales-source-logo-img--rounded' : ''}`}
+                      />
+                    </button>
+                  ))}
+                  {REVENUE_SOURCES.filter(s => !connectedSources.has(s.id)).length > 0 && (
+                    <span className="sales-source-divider" />
+                  )}
+                  {REVENUE_SOURCES.filter(s => !connectedSources.has(s.id)).map((s) => (
+                    <button
+                      key={s.id}
+                      className="sales-source-logo-btn sales-source-logo-btn--disconnected"
+                      title={`${s.name} — not connected`}
                       onClick={() => toggleSource(s.id)}
                     >
                       <img
@@ -489,7 +520,7 @@ export default function Sales() {
                         }}
                         formatter={(value) => [`$${value.toLocaleString()}`]}
                       />
-                      {REVENUE_SOURCES.map((s) =>
+                      {REVENUE_SOURCES.filter(s => connectedSources.has(s.id)).map((s) =>
                         visibleSources.has(s.id) ? (
                           <Area
                             key={s.id}

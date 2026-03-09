@@ -411,6 +411,9 @@
 
 .od-add-context-btn {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 7px 12px;
   background: var(--brand-red);
   color: #fff;
@@ -419,11 +422,29 @@
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
-  transition: background 0.15s;
+  transition: background 0.15s, opacity 0.15s;
+  opacity: 0;
 }
 
-.od-add-context-btn:hover {
+.od-card:hover .od-add-context-btn {
+  opacity: 1;
+}
+
+.od-add-context-btn:hover:not(:disabled) {
   background: var(--brand-red-hover);
+}
+
+.od-add-context-btn:disabled {
+  cursor: default;
+}
+
+.od-add-context-btn--added {
+  background: #22c55e;
+  opacity: 1;
+}
+
+.od-add-context-btn--added:hover {
+  background: #22c55e;
 }
 
 .od-card-multiplier {

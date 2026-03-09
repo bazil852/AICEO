@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Send, Image, FileText, Link2, ChevronRight, ChevronLeft, X, Plus, History, Loader, CircleStop } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { uploadContextFiles, extractSocialUrls, getContentItems, deleteContentItem, getIntegrationContext } from '../lib/api';
+import { uploadContextFiles, extractSocialUrls, getContentItems, deleteContentItem, getIntegrationContext, generateImage } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import './Content.css';
 
@@ -77,16 +77,74 @@ const platforms = [
 const SOCIAL_URL_PATTERN = /^https?:\/\/(www\.)?(instagram\.com|facebook\.com|fb\.watch|linkedin\.com|youtube\.com|youtu\.be|x\.com|twitter\.com|tiktok\.com)\//i;
 
 const PLATFORM_GUIDANCE = {
-  instagram: 'Create content optimized for Instagram — compelling captions (up to 2,200 chars), strategic hashtags, Reels scripts, carousel slides, and Stories ideas. Focus on visual storytelling and engagement hooks.',
-  facebook: 'Create content optimized for Facebook — engaging posts, group-friendly discussions, video descriptions, event copy, and ad copy. Focus on community building and shareability.',
-  linkedin: 'Create content optimized for LinkedIn — professional thought leadership posts, article drafts, carousel content, and networking-friendly copy. Focus on authority, value, and professional engagement.',
-  youtube: 'Create content optimized for YouTube — video scripts, titles, descriptions with SEO keywords, thumbnail concepts, Shorts scripts, and chapter timestamps. Focus on retention and discoverability.',
-  x: 'Create content optimized for X (Twitter) — punchy tweets (up to 280 chars), threads, quote-tweet strategies, and engagement hooks. Focus on conciseness and virality.',
-  tiktok: 'Create content optimized for TikTok — short-form video scripts with hooks in the first 1-3 seconds, trending audio suggestions, caption copy, and hashtag strategies. Focus on trends and watch time.',
+  instagram: `Instagram content that actually performs. Study what top creators do:
+- Carousels: Bold first slide with a hook statement (not a question). Clean typography, high contrast. Each slide delivers ONE clear point. Last slide = CTA.
+- Reels: Hook in first 0.5s. Pattern interrupt. Fast cuts. Text overlays that tell the story on mute. Trending audio when relevant.
+- Stories: Raw, authentic, behind-the-scenes. Polls/questions for engagement. Keep it casual.
+- Captions: Lead with a strong first line (it's the hook before "...more"). Write like you talk. Break into short paragraphs. 3-5 relevant hashtags max, not 30.
+- NEVER use generic filler, excessive emojis, or "Hey guys!" energy. Write like a real person, not a marketing bot.`,
+  facebook: `Facebook content that gets shared, not scrolled past. Focus on storytelling, relatable moments, and discussion starters. Longer-form posts perform well. Ask genuine questions. Use line breaks for readability.`,
+  linkedin: `LinkedIn content with real authority. Lead with a contrarian take or hard-won insight. Use short paragraphs and line breaks. No corporate jargon. Share real experiences, real numbers, real lessons. Write like a smart person talking, not a press release.`,
+  youtube: `YouTube content built for retention. Titles: curiosity gap + clarity (not clickbait). Descriptions: front-load keywords, include timestamps. Scripts: open with the payoff/promise, deliver value fast, use pattern interrupts every 30-60s. Thumbnails: high contrast, expressive face or striking visual, 3-4 words max.`,
+  x: `X/Twitter content that spreads. One idea per tweet. Strong opening line. No filler words. Threads: first tweet must stand alone and hook. Use contrarian takes, specific numbers, or "Here's what nobody tells you about X" patterns. No hashtag spam.`,
+  tiktok: `TikTok content that hooks immediately. First frame must stop the scroll — movement, text hook, or pattern interrupt. Keep it under 30s for better completion rate. Use trending sounds. Text overlays that tell the story on mute. Raw > polished.`,
 };
 
+// Parse <<OPTIONS>> blocks from AI response
+function parseMessageOptions(content) {
+  const match = content.match(/<<OPTIONS>>\n?([\s\S]*?)\n?<<\/OPTIONS>>/);
+  if (!match) return { text: content, options: null };
+  const options = match[1].split('\n').map(o => o.trim()).filter(Boolean);
+  const text = content.replace(/<<OPTIONS>>[\s\S]*?<<\/OPTIONS>>/, '').trim();
+  return { text, options: options.length > 0 ? options : null };
+}
+
 function buildSystemPrompt(platform, photos, documents, socialUrls, brandDna, integrationContext) {
-  let prompt = `You are a content creation AI assistant powered by PuerlyPersonal. Your job is to help the user write, plan, and generate content specifically for ${platform.name}. Be creative, on-brand, and strategic. Format your responses with markdown — use headers, bullet points, bold text, and code blocks when appropriate.\n\n`;
+  let prompt = `You are a senior content strategist who creates content that actually performs on social media. You study what top creators and brands do — you understand hooks, retention, visual hierarchy, and what makes people stop scrolling.\n\n`;
+  prompt += `You do NOT produce generic AI slop. No excessive emojis. No "Hey guys!" energy. No corporate marketing speak. No cartoonish or clip-art style visuals. You write like a real human who understands the platform.\n\n`;
+  prompt += `Platform: ${platform.name}\n\n`;
+
+  prompt += `=== GUIDED CONTENT CREATION FLOW ===\n`;
+  prompt += `When the user describes content they want to create:\n`;
+  prompt += `1. Detect the content type (carousel, reel, story, post, script, etc.)\n`;
+  prompt += `2. Ask 3 quick clarifying questions ONE AT A TIME with 4 selectable options each\n`;
+  prompt += `3. Format questions with this EXACT syntax:\n\n`;
+  prompt += `Your question?\n\n<<OPTIONS>>\nOption 1\nOption 2\nOption 3\nOption 4\n<</OPTIONS>>\n\n`;
+  prompt += `4. After 3 questions, generate the FINAL content — no more questions.\n`;
+  prompt += `5. When generating final content, ALWAYS call generate_image for EVERY visual needed:\n`;
+  prompt += `   - CAROUSEL: Call generate_image SEPARATELY for EACH slide (5-7 slides). Each call = one slide with its own text/design.\n`;
+  prompt += `   - SINGLE POST: Call generate_image once for the post image.\n`;
+  prompt += `   - STORY FLOW: Call generate_image for each story frame (3-4 images).\n`;
+  prompt += `   - YOUTUBE: Call generate_image for the thumbnail.\n`;
+  prompt += `   You can make MULTIPLE generate_image calls in the same response. Each slide needs its own call.\n\n`;
+  prompt += `QUESTION RULES:\n`;
+  prompt += `- Ask smart questions that shape the output (angle, tone, hook style) — not obvious ones\n`;
+  prompt += `- 4 options per question, concise (2-5 words)\n`;
+  prompt += `- ONE question per message, keep the preamble to 1-2 sentences max\n\n`;
+
+  prompt += `=== CONTENT QUALITY STANDARDS ===\n`;
+  prompt += `When producing final content:\n`;
+  prompt += `- Write the actual caption/script/copy ready to post — not a description of what to post\n`;
+  prompt += `- Captions: strong first line (the hook), short paragraphs, natural voice\n`;
+  prompt += `- For carousels: write the actual text for each slide, not "Slide 1 could be about..."\n`;
+  prompt += `- No filler, no fluff, no "Let me know what you think!" unless it fits naturally\n`;
+  prompt += `- MAX 3-5 hashtags, placed at the end, relevant ones only\n\n`;
+
+  prompt += `=== IMAGE GENERATION STANDARDS ===\n`;
+  prompt += `When calling generate_image, your prompt MUST follow these rules:\n`;
+  prompt += `- The image prompt must describe a REAL graphic design — the kind a professional designer would make in Figma\n`;
+  prompt += `- Include ACTUAL TEXT to render on the image — bold headline text, hook text, key phrases. This text IS the content.\n`;
+  prompt += `- Specify typography: "bold sans-serif text", "clean modern font", "large white text on dark background"\n`;
+  prompt += `- NO cartoons, NO pixel art, NO clip-art, NO illustrations, NO stock photos\n`;
+  if (platform.id === 'instagram') {
+    prompt += `- INSTAGRAM: Image MUST be SQUARE (1:1). Bold text as the main element. Clean background (solid color, gradient, or blurred photo). Think carousel slide that @garyvee or @chriswillx would post.\n`;
+  } else if (platform.id === 'youtube') {
+    prompt += `- YOUTUBE: Image MUST be LANDSCAPE (16:9). Thumbnail style — dramatic, high contrast, 3-4 words max in huge bold text.\n`;
+  } else if (platform.id === 'tiktok') {
+    prompt += `- TIKTOK: Image MUST be PORTRAIT (9:16). Bold centered text overlay, eye-catching at small size.\n`;
+  }
+  prompt += `- Always specify exact colors (e.g. "black background with white text and red accent")\n`;
+  prompt += `- The text on the image should be the HOOK or KEY MESSAGE — not decorative\n\n`;
 
   prompt += `=== TARGET PLATFORM: ${platform.name} ===\n`;
   prompt += (PLATFORM_GUIDANCE[platform.id] || `Tailor all content for ${platform.name}.`) + '\n\n';
@@ -170,11 +228,46 @@ function buildSystemPrompt(platform, photos, documents, socialUrls, brandDna, in
     prompt += `=== BUSINESS DATA FROM INTEGRATIONS ===\n${integrationContext}\n\nUse this business data (call transcripts, payment data, CRM contacts, etc.) to inform your content suggestions with real business context.\n\n`;
   }
 
-  prompt += `Always be actionable and ready to generate actual content (captions, scripts, hooks, threads, etc.) — not just advice.`;
+  prompt += `Output the ACTUAL content ready to post. Not advice about content. Not suggestions. The real thing. And ALWAYS call generate_image for the visual.`;
   return prompt;
 }
 
-async function streamContentResponse(messages, systemPrompt, onChunk, abortSignal) {
+// Grok tool definition for image generation
+const IMAGE_TOOL = {
+  type: 'function',
+  function: {
+    name: 'generate_image',
+    description: 'Generate a professional image for the content. MUST be called when producing final content. The image should look like it belongs on a top-performing Instagram/YouTube account — clean, modern, high production value.',
+    parameters: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description: 'Detailed image generation prompt. MUST include: 1) Style (photorealistic, modern graphic design, or cinematic — NEVER cartoon/pixel-art/clip-art), 2) Specific subject and composition, 3) Color palette and lighting, 4) Any text overlays with exact wording and typography style. Think professional design studio output.',
+        },
+      },
+      required: ['prompt'],
+    },
+  },
+};
+
+// Extract image prompt from AI text when it describes an image instead of calling the tool
+function extractImagePromptFromText(text) {
+  // Look for common patterns: "Image Description:", "Image Concept:", "Thumbnail Concept:", markdown image blocks, etc.
+  const patterns = [
+    /(?:image\s*(?:description|concept|prompt|idea)[\s:]*(?:for\s*generation)?[\s:]*)\n*([\s\S]{30,500}?)(?:\n\n|\n(?:##|---|Feel free|Let me know|Caption|Script|Post|Here))/i,
+    /(?:thumbnail\s*(?:description|concept|design)[\s:]*)\n*([\s\S]{30,500}?)(?:\n\n|\n(?:##|---|Feel free|Let me know))/i,
+    /(?:visual\s*(?:description|concept)[\s:]*)\n*([\s\S]{30,500}?)(?:\n\n|\n(?:##|---|Feel free|Let me know))/i,
+  ];
+  for (const pat of patterns) {
+    const match = text.match(pat);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
+// Stream Grok response with tool calling support
+async function streamContentResponse(messages, systemPrompt, onTextChunk, onToolCall, abortSignal) {
   const res = await fetch('/api/xai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -185,9 +278,12 @@ async function streamContentResponse(messages, systemPrompt, onChunk, abortSigna
       model: 'grok-3-fast',
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
       stream: true,
+      tools: [IMAGE_TOOL],
+      tool_choice: 'auto',
     }),
     signal: abortSignal,
   });
+  console.log(`🎨 Streaming started (${messages.filter(m => m.role === 'user').length} user messages)`);
 
   if (!res.ok) throw new Error(await res.text());
 
@@ -197,6 +293,7 @@ async function streamContentResponse(messages, systemPrompt, onChunk, abortSigna
   const decoder = new TextDecoder();
   let fullContent = '';
   let buffer = '';
+  let toolCalls = {}; // id -> { name, arguments }
 
   while (true) {
     const { done, value } = await reader.read();
@@ -210,12 +307,64 @@ async function streamContentResponse(messages, systemPrompt, onChunk, abortSigna
       const data = trimmed.slice(6);
       if (data === '[DONE]') continue;
       try {
-        const delta = JSON.parse(data).choices?.[0]?.delta?.content;
-        if (delta) { fullContent += delta; onChunk(fullContent); }
+        const parsed = JSON.parse(data);
+        const choice = parsed.choices?.[0];
+        if (!choice) continue;
+
+        // Text content
+        const textDelta = choice.delta?.content;
+        if (textDelta) {
+          fullContent += textDelta;
+          onTextChunk(fullContent);
+        }
+
+        // Tool calls
+        const tc = choice.delta?.tool_calls;
+        if (tc) {
+          for (const call of tc) {
+            const idx = call.index ?? 0;
+            if (!toolCalls[idx]) {
+              toolCalls[idx] = { id: call.id || '', name: '', arguments: '' };
+            }
+            if (call.id) toolCalls[idx].id = call.id;
+            if (call.function?.name) toolCalls[idx].name = call.function.name;
+            if (call.function?.arguments) toolCalls[idx].arguments += call.function.arguments;
+          }
+        }
       } catch { /* skip malformed */ }
     }
   }
-  return fullContent;
+
+  // Process any tool calls after streaming completes
+  const calls = Object.values(toolCalls).filter((tc) => tc.name === 'generate_image');
+  console.log('🔧 Tool calls received:', calls.length, JSON.stringify(calls.map(t => ({ name: t.name, args: t.arguments?.slice(0, 80) }))));
+
+  let hadToolCall = false;
+
+  // Collect all image prompts
+  const imageCalls = [];
+  for (const call of calls) {
+    try {
+      const args = JSON.parse(call.arguments);
+      if (args.prompt) imageCalls.push({ id: call.id, prompt: args.prompt });
+    } catch (e) { console.error('Tool call parse error:', e, call.arguments); }
+  }
+
+  // Fallback: if Grok described images in text instead of calling the tool
+  if (imageCalls.length === 0 && fullContent) {
+    const extractedPrompt = extractImagePromptFromText(fullContent);
+    if (extractedPrompt) {
+      console.log('🖼️ Fallback — extracting image prompt from text:', extractedPrompt.slice(0, 80));
+      imageCalls.push({ id: 'fallback', prompt: extractedPrompt });
+    }
+  }
+
+  if (imageCalls.length > 0) {
+    hadToolCall = true;
+    await onToolCall(imageCalls);
+  }
+
+  return { content: fullContent, hadToolCall };
 }
 
 export default function Content() {
@@ -257,12 +406,13 @@ export default function Content() {
   // Fetch Brand DNA and integration context on mount
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session?.user) return;
-      const { data } = await supabase
+      if (!session?.user) { console.log('[Content] No session — skipping Brand DNA fetch'); return; }
+      const { data, error } = await supabase
         .from('brand_dna')
         .select('*')
         .eq('user_id', session.user.id)
         .single();
+      console.log('[Content] Brand DNA loaded:', data ? { logo: !!data.logo_url, photos: data.photo_urls?.length, colors: data.colors, fonts: { main: data.main_font } } : null, error?.message || '');
       if (data) setBrandDna(data);
     });
     getIntegrationContext().then(({ context }) => {
@@ -279,15 +429,76 @@ export default function Content() {
   const sendToAI = useCallback(async (chatHistory) => {
     setIsGenerating(true);
     const assistantMsgId = `msg-${Date.now()}-ai`;
-    setMessages((prev) => [...prev, { id: assistantMsgId, role: 'assistant', content: '' }]);
+    setMessages((prev) => [...prev, { id: assistantMsgId, role: 'assistant', content: '', images: [], pendingImages: 0 }]);
+
     try {
       const abort = new AbortController();
       abortRef.current = abort;
       const apiMessages = chatHistory.map((m) => ({ role: m.role, content: m.content }));
       const systemPrompt = buildSystemPrompt(activePlatform, photos, documents, socialUrls, brandDna, integrationCtx);
-      await streamContentResponse(apiMessages, systemPrompt, (text) => {
-        setMessages((prev) => prev.map((m) => (m.id === assistantMsgId ? { ...m, content: text } : m)));
-      }, abort.signal);
+
+      console.group('📋 Content AI — Context being sent');
+      console.log('Platform:', activePlatform.name);
+      console.log('Photos:', photos.length, photos.map(p => ({ status: p.status, name: p.file?.name || p.result?.filename })));
+      console.log('Documents:', documents.length, documents.map(d => ({ status: d.status, name: d.file?.name || d.filename, hasText: !!d.result?.extractedText, hasTranscript: !!d.result?.transcript })));
+      console.log('Social URLs:', socialUrls.length, socialUrls.map(s => ({ url: s.url, status: s.status, title: s.result?.title, hasTranscript: !!s.result?.transcript })));
+      console.log('Brand DNA:', brandDna ? { description: brandDna.description, colors: brandDna.colors, fonts: { main: brandDna.main_font, secondary: brandDna.secondary_font }, hasPhotos: !!brandDna.photo_urls?.length, hasDocs: brandDna.documents ? Object.keys(brandDna.documents) : [] } : null);
+      console.log('Integration Context:', integrationCtx ? integrationCtx.slice(0, 200) + '...' : '(none)');
+      console.log('Messages:', apiMessages.length);
+      console.log('Full System Prompt:\n', systemPrompt);
+      console.groupEnd();
+
+      await streamContentResponse(
+        apiMessages,
+        systemPrompt,
+        // onTextChunk — stream text normally
+        (text) => {
+          setMessages((prev) => prev.map((m) => (m.id === assistantMsgId ? { ...m, content: text } : m)));
+        },
+        // onToolCalls — all generate_image calls at once, run in parallel
+        async (imageCalls) => {
+          console.log(`🖼️ Generating ${imageCalls.length} image(s) in parallel`);
+          setMessages((prev) => prev.map((m) =>
+            m.id === assistantMsgId ? { ...m, pendingImages: imageCalls.length } : m
+          ));
+
+          const results = await Promise.allSettled(
+            imageCalls.map(async ({ prompt: imgPrompt }, idx) => {
+              console.log(`  🎨 [${idx + 1}/${imageCalls.length}] ${imgPrompt.slice(0, 80)}...`);
+              const brandImageData = brandDna ? {
+                photoUrls: brandDna.photo_urls || [],
+                logoUrl: brandDna.logo_url || null,
+                colors: brandDna.colors || {},
+                mainFont: brandDna.main_font || null,
+              } : null;
+              const result = await generateImage(imgPrompt, selectedPlatform, brandImageData);
+              // Update message as each image completes
+              if (result.image) {
+                const src = `data:${result.image.mimeType};base64,${result.image.data}`;
+                setMessages((prev) => prev.map((m) =>
+                  m.id === assistantMsgId ? {
+                    ...m,
+                    images: [...m.images, { src, idx }],
+                    pendingImages: m.pendingImages - 1,
+                  } : m
+                ));
+              }
+              return result;
+            })
+          );
+
+          // Mark any remaining pending as done
+          setMessages((prev) => prev.map((m) =>
+            m.id === assistantMsgId ? { ...m, pendingImages: 0 } : m
+          ));
+
+          const failed = results.filter(r => r.status === 'rejected');
+          if (failed.length > 0) {
+            console.warn(`⚠️ ${failed.length} image(s) failed`);
+          }
+        },
+        abort.signal
+      );
     } catch (err) {
       if (err.name !== 'AbortError') {
         setMessages((prev) => prev.map((m) =>
@@ -298,11 +509,19 @@ export default function Content() {
       abortRef.current = null;
       setIsGenerating(false);
     }
-  }, [activePlatform, photos, documents, socialUrls, brandDna]);
+  }, [activePlatform, photos, documents, socialUrls, brandDna, integrationCtx]);
 
   const stopGenerating = useCallback(() => {
     if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; setIsGenerating(false); }
   }, []);
+
+  const selectOption = useCallback((option) => {
+    if (isGenerating) return;
+    const userMsg = { id: `msg-${Date.now()}-user`, role: 'user', content: option };
+    const updated = [...messages, userMsg];
+    setMessages(updated);
+    sendToAI(updated);
+  }, [isGenerating, messages, sendToAI]);
 
   const sendMessage = useCallback(() => {
     const text = input.trim();
@@ -510,6 +729,7 @@ export default function Content() {
   // Load saved content items from DB on mount
   useEffect(() => {
     getContentItems().then(({ items }) => {
+      console.log('[Content] Loaded content items:', items?.length, items?.map(i => ({ type: i.type, url: i.url?.slice(0, 60) })));
       if (!items?.length) return;
       const savedPhotos = [];
       const savedDocs = [];
@@ -540,10 +760,11 @@ export default function Content() {
           });
         }
       }
+      console.log('[Content] Restored context — photos:', savedPhotos.length, 'docs:', savedDocs.length, 'social:', savedSocial.length);
       if (savedPhotos.length) setPhotos(savedPhotos);
       if (savedDocs.length) setDocuments(savedDocs);
       if (savedSocial.length) setSocialUrls(savedSocial);
-    }).catch(() => {});
+    }).catch((err) => { console.error('[Content] Failed to load content items:', err); });
   }, []);
 
   // ── Shared sidebar/sheet content ──
@@ -747,13 +968,52 @@ export default function Content() {
 
       {/* Brand DNA */}
       <div className="cs-branddna cs-branddna--expanded">
-        <img src="/favicon.png" alt="Brand DNA" className="cs-branddna-logo" />
-        <span className="cs-branddna-title cs-branddna-title--show">Brand DNA</span>
-        <p className="cs-branddna-desc cs-branddna-desc--show">
-          Your brand voice, identity, and visual style used to personalize content.
-        </p>
+        <div className="cs-branddna-top">
+          {brandDna?.logo_url ? (
+            <img src={brandDna.logo_url} alt="Logo" className="cs-branddna-logo" crossOrigin="anonymous" onError={(e) => { e.target.src = '/favicon.png'; }} />
+          ) : (
+            <img src="/favicon.png" alt="Brand DNA" className="cs-branddna-logo" />
+          )}
+          <span className="cs-branddna-title cs-branddna-title--show">Brand DNA</span>
+        </div>
+
+        {/* Brand Photos */}
+        {brandDna?.photo_urls?.length > 0 && (
+          <div className="cs-branddna-photos">
+            {brandDna.photo_urls.slice(0, 4).map((url, i) => (
+              <img key={i} src={url} alt="" className="cs-branddna-photo" crossOrigin="anonymous" onError={(e) => { e.target.style.display = 'none'; }} />
+            ))}
+            {brandDna.photo_urls.length > 4 && (
+              <span className="cs-branddna-photo-more">+{brandDna.photo_urls.length - 4}</span>
+            )}
+          </div>
+        )}
+
+        {/* Brand Colors */}
+        {brandDna?.colors && Object.values(brandDna.colors).some(Boolean) && (
+          <div className="cs-branddna-colors">
+            {brandDna.colors.primary && <div className="cs-branddna-swatch" style={{ background: brandDna.colors.primary }} title={`Primary: ${brandDna.colors.primary}`} />}
+            {brandDna.colors.text && <div className="cs-branddna-swatch" style={{ background: brandDna.colors.text }} title={`Text: ${brandDna.colors.text}`} />}
+            {brandDna.colors.secondary && <div className="cs-branddna-swatch" style={{ background: brandDna.colors.secondary }} title={`Secondary: ${brandDna.colors.secondary}`} />}
+          </div>
+        )}
+
+        {/* Brand Fonts */}
+        {(brandDna?.main_font || brandDna?.secondary_font) && (
+          <div className="cs-branddna-fonts">
+            {brandDna.main_font && <span className="cs-branddna-font" style={{ fontFamily: brandDna.main_font }}>{brandDna.main_font}</span>}
+            {brandDna.secondary_font && <span className="cs-branddna-font cs-branddna-font--secondary" style={{ fontFamily: brandDna.secondary_font }}>{brandDna.secondary_font}</span>}
+          </div>
+        )}
+
+        {!brandDna && (
+          <p className="cs-branddna-desc cs-branddna-desc--show">
+            Set up your brand voice, photos, and visual style.
+          </p>
+        )}
+
         <button className="cs-branddna-btn cs-branddna-btn--show" onClick={(e) => { e.stopPropagation(); navigate('/settings', { state: { scrollTo: 'brand-dna' } }); }}>
-          Edit Brand DNA
+          {brandDna ? 'Edit Brand DNA' : 'Set Up Brand DNA'}
         </button>
       </div>
     </>
@@ -961,13 +1221,42 @@ export default function Content() {
 
           {/* Brand DNA */}
           <div className="cs-branddna">
-            <img src="/favicon.png" alt="Brand DNA" className="cs-branddna-logo" />
-            <span className="cs-branddna-title">Brand DNA</span>
+            <div className="cs-branddna-top">
+              {brandDna?.logo_url ? (
+                <img src={brandDna.logo_url} alt="Logo" className="cs-branddna-logo" crossOrigin="anonymous" onError={(e) => { e.target.src = '/favicon.png'; }} />
+              ) : (
+                <img src="/favicon.png" alt="Brand DNA" className="cs-branddna-logo" />
+              )}
+              <span className="cs-branddna-title">Brand DNA</span>
+            </div>
+            {sidebarOpen && brandDna?.photo_urls?.length > 0 && (
+              <div className="cs-branddna-photos">
+                {brandDna.photo_urls.slice(0, 4).map((url, i) => (
+                  <img key={i} src={url} alt="" className="cs-branddna-photo" crossOrigin="anonymous" onError={(e) => { e.target.style.display = 'none'; }} />
+                ))}
+                {brandDna.photo_urls.length > 4 && (
+                  <span className="cs-branddna-photo-more">+{brandDna.photo_urls.length - 4}</span>
+                )}
+              </div>
+            )}
+            {sidebarOpen && brandDna?.colors && Object.values(brandDna.colors).some(Boolean) && (
+              <div className="cs-branddna-colors">
+                {brandDna.colors.primary && <div className="cs-branddna-swatch" style={{ background: brandDna.colors.primary }} />}
+                {brandDna.colors.text && <div className="cs-branddna-swatch" style={{ background: brandDna.colors.text }} />}
+                {brandDna.colors.secondary && <div className="cs-branddna-swatch" style={{ background: brandDna.colors.secondary }} />}
+              </div>
+            )}
+            {sidebarOpen && (brandDna?.main_font || brandDna?.secondary_font) && (
+              <div className="cs-branddna-fonts">
+                {brandDna.main_font && <span className="cs-branddna-font">{brandDna.main_font}</span>}
+                {brandDna.secondary_font && <span className="cs-branddna-font cs-branddna-font--secondary">{brandDna.secondary_font}</span>}
+              </div>
+            )}
             <p className="cs-branddna-desc">
-              Your brand voice, identity, and visual style used to personalize content.
+              {brandDna ? '' : 'Set up your brand identity.'}
             </p>
             <button className="cs-branddna-btn" onClick={(e) => { e.stopPropagation(); navigate('/settings', { state: { scrollTo: 'brand-dna' } }); }}>
-              Edit Brand DNA
+              {brandDna ? 'Edit Brand DNA' : 'Set Up Brand DNA'}
             </button>
           </div>
         </div>
@@ -1120,15 +1409,41 @@ export default function Content() {
                     </div>
                   );
                 }
+                const parsed = parseMessageOptions(msg.content);
+                const sortedImages = [...(msg.images || [])].sort((a, b) => a.idx - b.idx);
+                const hasPending = (msg.pendingImages || 0) > 0;
+                const hasImages = sortedImages.length > 0 || hasPending;
                 return (
                   <div key={msg.id} className="content-bubble content-bubble--assistant">
-                    <div className="content-markdown">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
-                        table: ({ children, ...props }) => (
-                          <div className="content-table-scroll"><table {...props}>{children}</table></div>
-                        ),
-                      }}>{msg.content}</ReactMarkdown>
-                    </div>
+                    {/* Image carousel */}
+                    {hasImages && (
+                      <div className="content-image-carousel">
+                        {sortedImages.map((img, i) => (
+                          <div key={i} className="content-carousel-slide content-generated-image--fadein">
+                            <img src={img.src} alt={`Slide ${i + 1}`} />
+                          </div>
+                        ))}
+                        {/* Skeleton placeholders for pending images */}
+                        {Array.from({ length: msg.pendingImages || 0 }).map((_, i) => (
+                          <div key={`pending-${i}`} className="content-carousel-slide content-image-skeleton">
+                            <div className="content-image-skeleton-shimmer" />
+                            <div className="content-image-skeleton-label">
+                              <Loader size={16} className="cs-spinner" />
+                              <span>Generating slide {sortedImages.length + i + 1}...</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {parsed.text && (
+                      <div className="content-markdown">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                          table: ({ children, ...props }) => (
+                            <div className="content-table-scroll"><table {...props}>{children}</table></div>
+                          ),
+                        }}>{parsed.text}</ReactMarkdown>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1136,6 +1451,23 @@ export default function Content() {
             </div>
           )}
         </div>
+
+        {/* Guided Question Options */}
+        {(() => {
+          const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant' && m.content);
+          if (!lastAssistant || isGenerating) return null;
+          const { options } = parseMessageOptions(lastAssistant.content);
+          if (!options) return null;
+          return (
+            <div className="content-options-tray">
+              {options.map((opt, i) => (
+                <button key={i} className="content-option-pill" style={{ animationDelay: `${i * 0.06}s` }} onClick={() => selectOption(opt)}>
+                  {opt}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* Chat Input */}
         <div className="content-input-area">

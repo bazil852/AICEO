@@ -434,12 +434,103 @@
   align-items: flex-start;
 }
 
+.cs-branddna-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .cs-branddna-logo {
   width: 22px;
   height: 22px;
   border-radius: 5px;
   object-fit: contain;
   flex-shrink: 0;
+}
+
+/* Brand DNA Photos row */
+.cs-branddna-photos {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.25s ease;
+}
+
+.content-sidebar--open .cs-branddna-photos,
+.cs-branddna--expanded .cs-branddna-photos {
+  max-height: 40px;
+  opacity: 1;
+}
+
+.cs-branddna-photo {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--border-light);
+}
+
+.cs-branddna-photo-more {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+
+/* Brand DNA Color swatches */
+.cs-branddna-colors {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.25s ease;
+}
+
+.content-sidebar--open .cs-branddna-colors,
+.cs-branddna--expanded .cs-branddna-colors {
+  max-height: 24px;
+  opacity: 1;
+}
+
+.cs-branddna-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+/* Brand DNA Fonts */
+.cs-branddna-fonts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.25s ease;
+}
+
+.content-sidebar--open .cs-branddna-fonts,
+.cs-branddna--expanded .cs-branddna-fonts {
+  max-height: 40px;
+  opacity: 1;
+}
+
+.cs-branddna-font {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.cs-branddna-font--secondary {
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 /* Title, desc, button hidden when collapsed */
@@ -1128,6 +1219,121 @@
   padding: 16px 20px;
 }
 
+/* ── Image Loading Skeleton ── */
+.content-image-skeleton {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: var(--bg-light);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.content-image-skeleton-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(233, 26, 68, 0.06) 40%,
+    rgba(233, 26, 68, 0.10) 50%,
+    rgba(233, 26, 68, 0.06) 60%,
+    transparent 100%
+  );
+  animation: skeletonShimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes skeletonShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.content-image-skeleton-label {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* ── Image Failed ── */
+.content-image-failed {
+  width: 100%;
+  max-width: 512px;
+  padding: 20px;
+  border-radius: 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #ef4444;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+/* ── Image Carousel ── */
+.content-image-carousel {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-light) transparent;
+}
+
+.content-image-carousel::-webkit-scrollbar {
+  height: 4px;
+}
+
+.content-image-carousel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.content-image-carousel::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 2px;
+}
+
+.content-carousel-slide {
+  flex-shrink: 0;
+  width: 280px;
+  border-radius: 12px;
+  overflow: hidden;
+  scroll-snap-align: start;
+}
+
+.content-carousel-slide img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 12px;
+}
+
+/* Single image — no carousel needed, show larger */
+.content-image-carousel:has(.content-carousel-slide:only-child) .content-carousel-slide {
+  width: 100%;
+  max-width: 512px;
+}
+
+/* ── Generated Image ── */
+.content-generated-image--fadein {
+  animation: imageFadeIn 0.4s ease-out;
+}
+
+@keyframes imageFadeIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 .content-markdown {
   font-size: 15px;
   line-height: 1.65;
@@ -1207,6 +1413,59 @@
 @keyframes contentDotBlink {
   0%, 60%, 100% { opacity: 0; }
   30% { opacity: 1; }
+}
+
+/* ── Guided Question Option Tray ── */
+.content-options-tray {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0 24px 8px;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 660px;
+  margin: 0 auto;
+}
+
+.content-option-pill {
+  width: 100%;
+  padding: 13px 20px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border-light);
+  background: var(--bg-white);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s, background 0.2s, color 0.2s, transform 0.12s, box-shadow 0.2s;
+  animation: optionSlideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes optionSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.content-option-pill:hover {
+  border-color: var(--brand-red);
+  background: var(--brand-red-light);
+  color: var(--brand-red);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 12px rgba(233, 26, 68, 0.10);
+}
+
+.content-option-pill:active {
+  transform: scale(0.98);
+  box-shadow: none;
 }
 
 .content-stop-btn {
@@ -1301,6 +1560,17 @@
   .content-hero-text {
     font-size: 15px;
     max-width: 260px;
+  }
+
+  .content-options-tray {
+    padding: 0 16px 6px;
+    gap: 5px;
+  }
+
+  .content-option-pill {
+    font-size: 13px;
+    padding: 11px 16px;
+    border-radius: 12px;
   }
 
   /* Show footer row with "Add context" + send */

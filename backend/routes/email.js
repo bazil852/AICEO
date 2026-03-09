@@ -5,12 +5,6 @@ import { sendEmail, validateSmtpConnection } from '../services/smtp.js';
 
 const router = Router();
 
-// Provider presets — use port 465 (direct SSL) to avoid STARTTLS issues on cloud hosts
-const PROVIDER_PRESETS = {
-  gmail: { imap_host: 'imap.gmail.com', imap_port: 993, smtp_host: 'smtp.gmail.com', smtp_port: 465 },
-  outlook: { imap_host: 'outlook.office365.com', imap_port: 993, smtp_host: 'smtp-mail.outlook.com', smtp_port: 587 },
-};
-
 // ─── List email accounts ───
 router.get('/api/email-accounts', async (req, res) => {
   const userId = req.user.id;
@@ -31,28 +25,26 @@ router.post('/api/email-accounts', async (req, res) => {
   const userId = req.user.id;
   if (userId === 'anonymous') return res.status(401).json({ error: 'Auth required' });
 
-  const { provider, email, display_name, username, password, imap_host, imap_port, smtp_host, smtp_port } = req.body;
+  const { email, display_name, username, password, imap_host, imap_port, smtp_host, smtp_port } = req.body;
 
-  if (!provider || !email || !username || !password) {
-    return res.status(400).json({ error: 'provider, email, username, and password are required' });
+  if (!email || !username || !password) {
+    return res.status(400).json({ error: 'email, username, and password are required' });
   }
 
-  // Apply presets for known providers
-  const preset = PROVIDER_PRESETS[provider] || {};
+  if (!imap_host || !smtp_host) {
+    return res.status(400).json({ error: 'IMAP host and SMTP host are required' });
+  }
+
   const account = {
-    imap_host: imap_host || preset.imap_host,
-    imap_port: imap_port || preset.imap_port || 993,
-    smtp_host: smtp_host || preset.smtp_host,
-    smtp_port: smtp_port || preset.smtp_port || 587,
+    imap_host,
+    imap_port: imap_port || 993,
+    smtp_host,
+    smtp_port: smtp_port || 587,
     username,
     password,
     email,
     display_name: display_name || '',
   };
-
-  if (!account.imap_host || !account.smtp_host) {
-    return res.status(400).json({ error: 'IMAP and SMTP host are required for custom providers' });
-  }
 
   // Validate IMAP (required — proves credentials work)
   try {
@@ -85,7 +77,7 @@ router.post('/api/email-accounts', async (req, res) => {
   // Save to DB
   const { data, error } = await supabase.from('email_accounts').insert({
     user_id: userId,
-    provider,
+    provider: 'custom',
     email,
     display_name: display_name || '',
     imap_host: account.imap_host,

@@ -2,10 +2,21 @@ const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const HOST = 'tiktok-scraper7.p.rapidapi.com';
 
 /**
+ * Extract username from a TikTok URL or clean up input.
+ */
+function extractUsername(input) {
+  // Handle TikTok profile URLs like https://www.tiktok.com/@username or https://tiktok.com/@user/video/123
+  const urlMatch = input.match(/tiktok\.com\/@([a-zA-Z0-9_.]+)/i);
+  if (urlMatch) return urlMatch[1];
+  // Strip @ prefix
+  return input.replace(/^@/, '').trim();
+}
+
+/**
  * Resolve a TikTok username to profile info.
  */
 export async function resolveProfile(username) {
-  const handle = username.replace(/^@/, '');
+  const handle = extractUsername(username);
   const data = await ttFetch('/user/info', { unique_id: handle });
 
   const user = data?.data?.user;
@@ -25,8 +36,8 @@ export async function resolveProfile(username) {
  * Fetch recent videos from a TikTok user.
  * Returns up to `count` videos with stats.
  */
-export async function fetchRecentVideos(username, count = 30) {
-  const handle = username.replace(/^@/, '');
+export async function fetchRecentVideos(username, count = 50) {
+  const handle = extractUsername(username);
   const videos = [];
   let cursor = '0';
 

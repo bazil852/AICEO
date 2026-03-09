@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { Mail, Lock, CreditCard, Zap, Check, X, Copy, Upload, Trash2, ChevronRight, FileText, Loader } from 'lucide-react';
 import ColorWheelPicker from '../components/ColorWheelPicker';
 import FontSelector from '../components/FontSelector';
-import { uploadBrandDnaFiles, uploadContextFiles, getIntegrations, connectIntegration, disconnectIntegration, getEmailAccounts } from '../lib/api';
+import { uploadBrandDnaFiles, uploadContextFiles, getIntegrations, connectIntegration, disconnectIntegration, getEmailAccounts, addEmailAccount } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import './Pages.css';
 import './Settings.css';
@@ -39,6 +39,7 @@ export default function Settings() {
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState(null);
   const [firefliesWebhook, setFirefliesWebhook] = useState({ url: '', secret: '' });
+  const [emailForm, setEmailForm] = useState({ email: '', senderName: '', username: '', password: '', imapHost: '', imapPort: '993', smtpHost: '', smtpPort: '587' });
 
   // Brand DNA
   const [brandDnaCreated, setBrandDnaCreated] = useState(false);
@@ -167,6 +168,7 @@ export default function Settings() {
     setConnectError(null);
     setConnecting(false);
     setFirefliesWebhook({ url: '', secret: '' });
+    setEmailForm({ email: '', senderName: '', username: '', password: '', imapHost: '', imapPort: '993', smtpHost: '', smtpPort: '587' });
     setModalOpen(id);
   };
 
@@ -219,6 +221,31 @@ export default function Settings() {
     }
   };
 
+  const handleEmailConnect = async () => {
+    const { email, senderName, username, password, imapHost, imapPort, smtpHost, smtpPort } = emailForm;
+    if (!email || !username || !password || !imapHost || !smtpHost) return;
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      await addEmailAccount({
+        email,
+        display_name: senderName,
+        username,
+        password,
+        imap_host: imapHost,
+        imap_port: parseInt(imapPort) || 993,
+        smtp_host: smtpHost,
+        smtp_port: parseInt(smtpPort) || 587,
+      });
+      setIntegrations((prev) => ({ ...prev, email: { is_active: true, provider: 'email' } }));
+      setModalOpen(null);
+    } catch (err) {
+      setConnectError(err.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
   const copyToClipboard = (text, field) => {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
@@ -242,14 +269,14 @@ export default function Settings() {
     try {
       const result = await uploadBrandDnaFiles(toAdd);
       const uploadedUrls = result.files.filter(f => f.type !== 'error').map(f => f.url);
-      placeholders.forEach(p => URL.revokeObjectURL(p.localUrl));
-      setPhotos(prev => {
-        const existing = prev.filter(p => !p.uploading);
-        const newOnes = uploadedUrls.map((url, i) => ({ id: `photo-done-${Date.now()}-${i}`, url }));
-        return [...existing, ...newOnes];
-      });
+      setPhotos(prev => prev.map(p => {
+        if (!p.uploading) return p;
+        const idx = placeholders.findIndex(ph => ph.id === p.id);
+        if (idx === -1 || !uploadedUrls[idx]) return p;
+        // Keep localUrl as fallback, add remote url, mark done
+        return { ...p, url: uploadedUrls[idx], uploading: false };
+      }));
     } catch {
-      placeholders.forEach(p => URL.revokeObjectURL(p.localUrl));
       setPhotos(prev => prev.filter(p => !p.uploading));
     }
   };
@@ -475,12 +502,9 @@ export default function Settings() {
               </div>
 
               <div
-                className="settings-upload-box"
+                className={`settings-upload-box ${photos.length > 0 ? 'settings-upload-box--has-photos' : ''}`}
                 onClick={() => photos.length < 6 && fileInputRef.current?.click()}
               >
-                <Upload size={28} />
-                <span>Upload photos of yourself</span>
-                <span className="settings-upload-hint">Click to browse — up to 6 images</span>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -489,28 +513,45 @@ export default function Settings() {
                   onChange={handlePhotoUpload}
                   style={{ display: 'none' }}
                 />
-              </div>
-
-              {photos.length > 0 && (
-                <div className="settings-photo-grid">
-                  {photos.map((photo) => (
-                    <div key={photo.id} className="settings-photo-item">
-                      <img src={photo.url || photo.localUrl} alt="" />
-                      {photo.uploading && (
-                        <div className="settings-photo-uploading">
-                          <Loader size={18} className="settings-spinner" />
+                {photos.length > 0 ? (
+                  <>
+                    <div className="settings-photo-grid-inline">
+                      {photos.map((photo) => (
+                        <div key={photo.id} className="settings-photo-item">
+                          <img
+                            src={photo.url || photo.localUrl}
+                            alt=""
+                            onError={(e) => { if (photo.localUrl && e.target.src !== photo.localUrl) e.target.src = photo.localUrl; }}
+                          />
+                          {photo.uploading && (
+                            <div className="settings-photo-uploading">
+                              <Loader size={18} className="settings-spinner" />
+                            </div>
+                          )}
+                          <button
+                            className="settings-photo-remove"
+                            onClick={(e) => { e.stopPropagation(); removePhoto(photo.id); }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                      {photos.length < 6 && (
+                        <div className="settings-photo-add">
+                          <Upload size={18} />
                         </div>
                       )}
-                      <button
-                        className="settings-photo-remove"
-                        onClick={() => removePhoto(photo.id)}
-                      >
-                        <Trash2 size={14} />
-                      </button>
                     </div>
-                  ))}
-                </div>
-              )}
+                    <span className="settings-upload-hint">{photos.length}/6 photos — click to add more</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload size={28} />
+                    <span>Upload photos of yourself</span>
+                    <span className="settings-upload-hint">Click to browse — up to 6 images</span>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Logo Upload */}
@@ -824,20 +865,47 @@ export default function Settings() {
                 </p>
                 <div className="modal-field">
                   <label className="modal-label">Email address</label>
-                  <input
-                    type="email"
-                    className="modal-input"
-                    placeholder="you@example.com"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                  />
+                  <input type="email" className="modal-input" placeholder="you@example.com" value={emailForm.email} onChange={(e) => setEmailForm(f => ({ ...f, email: e.target.value }))} />
                 </div>
+                <div className="modal-field">
+                  <label className="modal-label">Sender Name</label>
+                  <input type="text" className="modal-input" placeholder="John Doe" value={emailForm.senderName} onChange={(e) => setEmailForm(f => ({ ...f, senderName: e.target.value }))} />
+                </div>
+                <div className="modal-field">
+                  <label className="modal-label">Username</label>
+                  <input type="text" className="modal-input" placeholder="you@example.com" value={emailForm.username} onChange={(e) => setEmailForm(f => ({ ...f, username: e.target.value }))} />
+                </div>
+                <div className="modal-field">
+                  <label className="modal-label">Password</label>
+                  <input type="password" className="modal-input" placeholder="App password or mail password" value={emailForm.password} onChange={(e) => setEmailForm(f => ({ ...f, password: e.target.value }))} />
+                </div>
+                <div className="modal-row">
+                  <div className="modal-field modal-field--flex">
+                    <label className="modal-label">IMAP Host</label>
+                    <input type="text" className="modal-input" placeholder="imap.example.com" value={emailForm.imapHost} onChange={(e) => setEmailForm(f => ({ ...f, imapHost: e.target.value }))} />
+                  </div>
+                  <div className="modal-field modal-field--small">
+                    <label className="modal-label">Port</label>
+                    <input type="text" className="modal-input" placeholder="993" value={emailForm.imapPort} onChange={(e) => setEmailForm(f => ({ ...f, imapPort: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="modal-row">
+                  <div className="modal-field modal-field--flex">
+                    <label className="modal-label">SMTP Host</label>
+                    <input type="text" className="modal-input" placeholder="smtp.example.com" value={emailForm.smtpHost} onChange={(e) => setEmailForm(f => ({ ...f, smtpHost: e.target.value }))} />
+                  </div>
+                  <div className="modal-field modal-field--small">
+                    <label className="modal-label">Port</label>
+                    <input type="text" className="modal-input" placeholder="587" value={emailForm.smtpPort} onChange={(e) => setEmailForm(f => ({ ...f, smtpPort: e.target.value }))} />
+                  </div>
+                </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
                 <button
                   className="modal-btn modal-btn--primary"
-                  disabled={!apiKey.trim()}
-                  onClick={handleConnect}
+                  disabled={!emailForm.email || !emailForm.username || !emailForm.password || !emailForm.imapHost || !emailForm.smtpHost || connecting}
+                  onClick={handleEmailConnect}
                 >
-                  Connect
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Connecting...</> : 'Connect'}
                 </button>
               </>
             )}

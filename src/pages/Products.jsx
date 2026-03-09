@@ -18,7 +18,7 @@ export default function Products() {
   const [error, setError] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [regeneratingId, setRegeneratingId] = useState(null);
-  const [newProduct, setNewProduct] = useState({ name: '', description: '', type: '', price: '', priceMode: 'One-time', photos: [] });
+  const [newProduct, setNewProduct] = useState({ name: '', description: '', type: '', price: '', priceMode: 'One-time', photos: [], paymentProcessor: 'none' });
   const [typeDropdownOpen, setTypeDropdownOpen] = useState(null);
   const fileInputRefs = useRef({});
 
@@ -132,6 +132,7 @@ export default function Products() {
         type: newProduct.type,
         price: newProduct.price,
         priceMode: newProduct.priceMode,
+        paymentProcessor: newProduct.paymentProcessor,
       });
       setProducts((prev) => [{
         ...product,
@@ -139,7 +140,7 @@ export default function Products() {
         priceMode: product.price_mode === 'monthly' ? 'Monthly' : 'One-time',
         photos: product.photos || [],
       }, ...prev]);
-      setNewProduct({ name: '', description: '', type: '', price: '', priceMode: 'One-time', photos: [] });
+      setNewProduct({ name: '', description: '', type: '', price: '', priceMode: 'One-time', photos: [], paymentProcessor: 'none' });
       setAddingNew(false);
     } catch (err) {
       setError(err.message);
@@ -324,7 +325,7 @@ export default function Products() {
         <div className="products-card products-card--new">
           <div className="products-card-header">
             <h3 className="products-card-title">New Product</h3>
-            <button className="products-card-close" onClick={() => { setAddingNew(false); setNewProduct({ name: '', description: '', type: '', price: '', priceMode: 'One-time', photos: [] }); }}>
+            <button className="products-card-close" onClick={() => { setAddingNew(false); setNewProduct({ name: '', description: '', type: '', price: '', priceMode: 'One-time', photos: [], paymentProcessor: 'none' }); }}>
               <X size={16} />
             </button>
           </div>
@@ -374,12 +375,36 @@ export default function Products() {
             </div>
           </div>
 
+          <div className="products-field">
+            <label className="products-label">Payment Link</label>
+            <div className="products-processor-select">
+              {[
+                { value: 'none', label: 'No Payment Link' },
+                { value: 'stripe', label: 'Stripe', logo: '/stripe-logo.png' },
+                { value: 'whop', label: 'Whop', logo: '/whop-logo.svg' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  className={`products-processor-btn ${newProduct.paymentProcessor === opt.value ? 'products-processor-btn--active' : ''}`}
+                  onClick={() => setNewProduct((prev) => ({ ...prev, paymentProcessor: opt.value }))}
+                >
+                  {opt.logo && <img src={opt.logo} alt="" className="products-processor-logo" />}
+                  <span>{opt.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <button
             className="products-save-btn"
             disabled={!newProduct.name.trim() || !newProduct.type || !newProduct.price.trim() || saving}
             onClick={addProduct}
           >
-            {saving ? <><Loader2 size={16} className="products-spin" /> Creating on Stripe...</> : 'Create Product & Generate Link'}
+            {saving ? (
+              <><Loader2 size={16} className="products-spin" /> {newProduct.paymentProcessor === 'none' ? 'Creating...' : `Creating on ${newProduct.paymentProcessor === 'stripe' ? 'Stripe' : 'Whop'}...`}</>
+            ) : (
+              newProduct.paymentProcessor === 'none' ? 'Create Product' : `Create Product & Generate ${newProduct.paymentProcessor === 'stripe' ? 'Stripe' : 'Whop'} Link`
+            )}
           </button>
         </div>
       )}
@@ -389,7 +414,7 @@ export default function Products() {
         <div className="products-empty">
           <Link2 size={40} />
           <h3>No products yet</h3>
-          <p>Create a product to generate a Stripe payment link you can share with clients.</p>
+          <p>Create a product and generate a payment link you can share with clients.</p>
           <button className="products-add-btn" onClick={() => setAddingNew(true)}>
             <Plus size={16} />
             Create Your First Product
@@ -449,6 +474,13 @@ export default function Products() {
                   {product.priceMode === 'Monthly' && <span className="products-price-suffix-text">/mo</span>}
                 </p>
               </div>
+
+              {product.payment_processor && product.payment_processor !== 'none' && (
+                <div className="products-field">
+                  <label className="products-label">Payment Processor</label>
+                  <span className="products-type-badge">{product.payment_processor === 'stripe' ? 'Stripe' : 'Whop'}</span>
+                </div>
+              )}
 
               {renderPaymentLink(product)}
 

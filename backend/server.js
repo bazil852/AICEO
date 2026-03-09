@@ -16,6 +16,7 @@ import webhookRoutes from './routes/webhooks.js';
 import salesRoutes from './routes/sales.js';
 import productRoutes from './routes/products.js';
 import contactRoutes from './routes/contacts.js';
+import generateRoutes from './routes/generate.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -89,6 +90,60 @@ app.delete('/api/content-items/:id', requireAuth, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
+});
+
+// ─── Add outlier video to content context ───
+app.post('/api/content-items/from-outlier', requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.status(401).json({ error: 'Auth required' });
+
+  const { url, title, thumbnail_url, platform, video_id, creator_name } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+
+  try {
+    // For YouTube, try to fetch transcript
+    let transcript = null;
+    if (platform === 'youtube' && video_id) {
+      try {
+        const { getSubtitles } = await import('youtube-caption-extractor');
+        const captions = await getSubtitles({ videoID: video_id, lang: 'en' });
+        if (captions?.length) {
+          transcript = captions.map((c) => c.text).join(' ');
+        }
+      } catch (e) {
+        console.log('[outlier-context] No captions for', video_id, e.message);
+      }
+    }
+
+    const { data: saved, error: dbErr } = await supabase.from('content_items').insert({
+      user_id: userId,
+      type: 'social',
+      url,
+      transcript,
+      metadata: {
+        platform: platform || 'unknown',
+        title: title || '',
+        uploader: creator_name || '',
+        thumbnail: thumbnail_url || null,
+        source: 'outlier-detector',
+      },
+    }).select('id').single();
+
+    if (dbErr) throw dbErr;
+
+    res.json({
+      id: saved.id,
+      url,
+      title,
+      thumbnail: thumbnail_url,
+      transcript,
+      platform,
+      creator_name,
+    });
+  } catch (err) {
+    console.log('[outlier-context] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── Upload & Process endpoint ───
@@ -426,7 +481,7 @@ app.post('/api/outlier/creators', requireAuth, async (req, res) => {
       if (insertErr) throw insertErr;
 
       console.log(`[outlier] Fetching TikTok videos for ${profile.displayName}`);
-      const videos = await tiktokService.fetchRecentVideos(username, 30);
+      const videos = await tiktokService.fetchRecentVideos(username, 50);
       const { videos: enriched, averages } = tiktokService.calculateOutliers(videos);
 
       await supabase.from('outlier_creators').update({
@@ -476,7 +531,7 @@ app.post('/api/outlier/creators', requireAuth, async (req, res) => {
       if (insertErr) throw insertErr;
 
       console.log(`[outlier] Fetching Instagram posts for ${profile.displayName}`);
-      const posts = await instagramService.fetchRecentPosts(username, 30);
+      const posts = await instagramService.fetchRecentPosts(username, 50);
       const { videos: enriched, averages } = instagramService.calculateOutliers(posts);
 
       await supabase.from('outlier_creators').update({
@@ -647,6 +702,13 @@ app.use((req, res, next) => {
   next();
 });
 app.use(contactRoutes);
+
+// ─── Generate routes (auth required) ───
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/generate')) return requireAuth(req, res, next);
+  next();
+});
+app.use(generateRoutes);
 
 // ─── Webhook routes (no auth — external services) ───
 app.use(webhookRoutes);

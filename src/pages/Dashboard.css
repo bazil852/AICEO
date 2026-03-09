@@ -528,3 +528,18 @@
   margin: -8px 0 12px;
   line-height: 1.4;
 }
+
+.modal-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+.modal-field--flex {
+  flex: 1;
+}
+
+.modal-field--small {
+  width: 90px;
+  flex-shrink: 0;
+}

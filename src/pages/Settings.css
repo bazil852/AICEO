@@ -273,7 +273,40 @@
   color: var(--text-muted);
 }
 
-/* Photo Grid */
+/* Upload box with photos inside */
+.settings-upload-box--has-photos {
+  padding: 16px 20px;
+  gap: 10px;
+}
+
+/* Inline photo grid inside upload box */
+.settings-photo-grid-inline {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
+/* "Add more" placeholder tile */
+.settings-photo-add {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 2px dashed var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  cursor: pointer;
+}
+
+.settings-upload-box:hover .settings-photo-add {
+  border-color: var(--brand-red);
+  color: var(--brand-red);
+  background: var(--brand-red-light);
+}
+
+/* Legacy photo grid (no longer used but keep for safety) */
 .settings-photo-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));

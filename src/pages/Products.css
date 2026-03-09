@@ -610,6 +610,45 @@
   animation: products-spin 0.6s linear infinite;
 }
 
+/* ── Payment Processor Selector ── */
+.products-processor-select {
+  display: flex;
+  gap: 8px;
+}
+
+.products-processor-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border-medium);
+  border-radius: 10px;
+  background: var(--bg-white);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.products-processor-btn:hover {
+  border-color: var(--text-secondary);
+}
+
+.products-processor-btn--active {
+  border-color: var(--brand-red);
+  background: rgba(233, 26, 68, 0.05);
+  color: var(--text-primary);
+}
+
+.products-processor-logo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .products-grid {

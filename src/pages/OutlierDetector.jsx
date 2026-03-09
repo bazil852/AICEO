@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, UserPlus, Play, User, Loader, RefreshCw, ExternalLink } from 'lucide-react';
-import { getOutlierCreators, addOutlierCreator, deleteOutlierCreator, getOutlierVideos } from '../lib/api';
+import { X, UserPlus, Play, User, Loader, RefreshCw, ExternalLink, PlusCircle, Check } from 'lucide-react';
+import { getOutlierCreators, addOutlierCreator, deleteOutlierCreator, getOutlierVideos, addOutlierToContext } from '../lib/api';
 import './Pages.css';
 import './OutlierDetector.css';
 
@@ -91,6 +91,8 @@ export default function OutlierDetector() {
   const [activeCreatorFilter, setActiveCreatorFilter] = useState(null);
   const [activePlatformFilter, setActivePlatformFilter] = useState(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [addedToContext, setAddedToContext] = useState(new Set());
+  const [addingToContext, setAddingToContext] = useState(null);
 
   // Load creators and videos on mount
   useEffect(() => {
@@ -140,16 +142,32 @@ export default function OutlierDetector() {
     deleteOutlierCreator(id).catch(() => {});
   };
 
+  const handleAddToContext = async (video) => {
+    const creator = video.outlier_creators || {};
+    setAddingToContext(video.id);
+    try {
+      await addOutlierToContext({
+        url: video.url,
+        title: video.title,
+        thumbnail_url: video.thumbnail_url,
+        platform: video.platform,
+        video_id: video.video_id,
+        creator_name: creator.display_name || creator.username || '',
+      });
+      setAddedToContext((prev) => new Set([...prev, video.id]));
+    } catch (err) {
+      console.error('Failed to add to context:', err);
+    } finally {
+      setAddingToContext(null);
+    }
+  };
+
   // Apply filters
   const filteredVideos = videos.filter((video) => {
-    const multiplier = getMultiplier(video, activeMetric);
-
     if (activeMultiplier) {
       const threshold = parseFloat(activeMultiplier);
+      const multiplier = getMultiplier(video, activeMetric);
       if (multiplier < threshold) return false;
-    } else {
-      // Default: show 2x+ outliers
-      if (multiplier < 2) return false;
     }
 
     if (activeCreatorFilter && video.creator_id !== activeCreatorFilter) return false;
@@ -292,7 +310,7 @@ export default function OutlierDetector() {
       </div>
 
       {/* Filters */}
-      {videos.length > 0 && (
+      {creators.length > 0 && (
         <div className="od-filters">
           <div className="od-filter-group">
             <span className="od-filter-label">Metric</span>
@@ -422,6 +440,20 @@ export default function OutlierDetector() {
                     {creator.display_name || creator.username}
                   </div>
                 </div>
+                {addedToContext.has(video.id) ? (
+                  <button className="od-add-context-btn od-add-context-btn--added" disabled>
+                    <Check size={14} /> Added
+                  </button>
+                ) : (
+                  <button
+                    className="od-add-context-btn"
+                    onClick={() => handleAddToContext(video)}
+                    disabled={addingToContext === video.id}
+                  >
+                    {addingToContext === video.id ? <Loader size={14} className="od-spin" /> : <PlusCircle size={14} />}
+                    {addingToContext === video.id ? 'Adding...' : 'Add to Context'}
+                  </button>
+                )}
               </div>
             </div>
           );
