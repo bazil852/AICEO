@@ -675,7 +675,7 @@ app.use(emailRoutes);
 
 // ─── Integration routes (auth required) ───
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/integrations') || req.path.startsWith('/api/integration-context')) {
+  if (req.path.startsWith('/api/integrations') || req.path.startsWith('/api/integration-context') || req.path.startsWith('/api/netlify')) {
     return requireAuth(req, res, next);
   }
   next();
