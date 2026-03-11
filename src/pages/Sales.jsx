@@ -18,6 +18,8 @@ import './Sales.css';
 const REVENUE_SOURCES = [
   { id: 'whop', name: 'Whop', color: '#f97316', logo: '/whop-square-logo.jpeg', rounded: true },
   { id: 'stripe', name: 'Stripe', color: '#7c3aed', logo: '/stripe-square-logo.png', rounded: true },
+  { id: 'shopify', name: 'Shopify', color: '#96bf48', logo: '/shopify-square-logo.png', rounded: true },
+  { id: 'kajabi', name: 'Kajabi', color: '#2962ff', logo: '/kajabi-square-logo.png', rounded: true },
   { id: 'platform', name: 'PuerlyPersonal', color: '#e91a44', logo: '/our-square-logo.png', rounded: true },
 ];
 
@@ -102,8 +104,9 @@ export default function Sales() {
 
       // Determine which payment processors are connected
       const connected = new Set(['platform']); // always on
+      const paymentProviders = ['stripe', 'whop', 'shopify', 'kajabi'];
       for (const intg of (integrationsRes.integrations || [])) {
-        if (intg.is_active && (intg.provider === 'stripe' || intg.provider === 'whop')) {
+        if (intg.is_active && paymentProviders.includes(intg.provider)) {
           connected.add(intg.provider);
         }
       }
@@ -163,6 +166,8 @@ export default function Sales() {
       label: d.label,
       whop: Math.round((d.whop || 0) * scale),
       stripe: Math.round((d.stripe || 0) * scale),
+      shopify: Math.round((d.shopify || 0) * scale),
+      kajabi: Math.round((d.kajabi || 0) * scale),
       platform: Math.round((d.platform || 0) * scale),
     }));
   }, [activeProduct, chartData, products]);

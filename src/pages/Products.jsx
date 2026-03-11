@@ -382,6 +382,8 @@ export default function Products() {
                 { value: 'none', label: 'No Payment Link' },
                 { value: 'stripe', label: 'Stripe', logo: '/stripe-logo.png' },
                 { value: 'whop', label: 'Whop', logo: '/whop-logo.svg' },
+                { value: 'shopify', label: 'Shopify', logo: '/shopify-logo.png' },
+                { value: 'kajabi', label: 'Kajabi', logo: '/kajabi-logo.png' },
               ].map((opt) => (
                 <button
                   key={opt.value}
@@ -401,9 +403,9 @@ export default function Products() {
             onClick={addProduct}
           >
             {saving ? (
-              <><Loader2 size={16} className="products-spin" /> {newProduct.paymentProcessor === 'none' ? 'Creating...' : `Creating on ${newProduct.paymentProcessor === 'stripe' ? 'Stripe' : 'Whop'}...`}</>
+              <><Loader2 size={16} className="products-spin" /> {newProduct.paymentProcessor === 'none' ? 'Creating...' : `Creating on ${newProduct.paymentProcessor.charAt(0).toUpperCase() + newProduct.paymentProcessor.slice(1)}...`}</>
             ) : (
-              newProduct.paymentProcessor === 'none' ? 'Create Product' : `Create Product & Generate ${newProduct.paymentProcessor === 'stripe' ? 'Stripe' : 'Whop'} Link`
+              newProduct.paymentProcessor === 'none' ? 'Create Product' : `Create Product & Generate ${newProduct.paymentProcessor.charAt(0).toUpperCase() + newProduct.paymentProcessor.slice(1)} Link`
             )}
           </button>
         </div>
@@ -478,7 +480,7 @@ export default function Products() {
               {product.payment_processor && product.payment_processor !== 'none' && (
                 <div className="products-field">
                   <label className="products-label">Payment Processor</label>
-                  <span className="products-type-badge">{product.payment_processor === 'stripe' ? 'Stripe' : 'Whop'}</span>
+                  <span className="products-type-badge">{product.payment_processor.charAt(0).toUpperCase() + product.payment_processor.slice(1)}</span>
                 </div>
               )}
 

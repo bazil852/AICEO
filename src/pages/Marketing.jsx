@@ -1,8 +1,12 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { Mail, Send, Users, BarChart3, Megaphone, Inbox, FileText, PenTool, ArrowUp, ChevronDown, Plus, X, ChevronRight, Paperclip } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { Mail, Send, Users, BarChart3, Megaphone, Inbox, FileText, PenTool, ArrowUp, ChevronDown, Plus, X, ChevronRight, Paperclip, Globe } from 'lucide-react';
+import { ReactFlow, Background, Handle, Position } from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import { MOCK_EMAILS } from './Inbox';
 import { MOCK_CALLS } from './Sales';
 import { INITIAL_PRODUCTS } from './Products';
+import { supabase } from '../lib/supabase';
+import { generateImage } from '../lib/api';
 import './Pages.css';
 import './Marketing.css';
 
@@ -14,6 +18,9 @@ FORMAT 1 — ASK A QUESTION (when you need more information):
 
 FORMAT 2 — GENERATE THE OUTPUT (when you have enough information):
 {"type":"newsletter","html":"<complete HTML code here>"}
+
+FORMAT 3 — GENERATE COVER IMAGE (when user selects a cover image option):
+{"type":"cover_image","prompt":"A hyper-detailed image generation prompt for a newsletter cover. Include: style (photographic/illustration/3D render), exact composition and layout, color palette with hex codes matching the newsletter design, subject matter details, mood and lighting, any text to overlay, designed for 1200x600 email header dimensions."}
 
 QUESTION FLOW:
 - Ask ONE question at a time. Provide 3-4 specific, helpful options.
@@ -41,7 +48,7 @@ IMPORTANT RULES:
 // ── Tool Configs ──
 const TOOL_CONFIGS = {
   newsletter: {
-    systemPrompt: `You are an elite newsletter copywriter and email designer working inside the PuerlyPersonal AI CEO platform. Your job is to help users create stunning, high-converting email newsletters.\n\n${SHARED_RULES}\n\nHTML REQUIREMENTS:\n- Generate a COMPLETE, standalone HTML email document with <!DOCTYPE html>, <html>, <head>, <body>\n- Use ONLY inline CSS styles — no <style> blocks, no external stylesheets, no <script> tags\n- Use table-based layout for email client compatibility\n- Make it visually stunning: clean typography, good whitespace, professional color palette\n- Include: branded header area, compelling headline, body sections with engaging copy, a prominent CTA button, footer with unsubscribe placeholder\n- Use a max-width of 600px centered layout (standard email width)\n- Default color scheme: clean white background, dark text (#333), accent color #E91A44 for CTA buttons and highlights\n- Write STELLAR copywriting: compelling headlines, engaging opening hooks, scannable body with subheadings, clear and urgent CTAs\n- Make the copy feel human, warm, and persuasive — not robotic or generic\n- The HTML must be production-ready email code that renders beautifully\n- If the user provides image URLs or data URIs, embed them directly in the HTML using <img> tags\n- Typical question flow: topic/angle → target audience → tone/voice → key CTA/goal`,
+    systemPrompt: `You are an elite newsletter copywriter and email designer working inside the PuerlyPersonal AI CEO platform. Your job is to help users create stunning, high-converting email newsletters.\n\n${SHARED_RULES}\n\nHTML REQUIREMENTS:\n- Generate a COMPLETE, standalone HTML email document with <!DOCTYPE html>, <html>, <head>, <body>\n- Use ONLY inline CSS styles — no <style> blocks, no external stylesheets, no <script> tags\n- Use table-based layout for email client compatibility\n- Make it visually stunning: clean typography, good whitespace, professional color palette\n- Include: branded header area, compelling headline, body sections with engaging copy, a prominent CTA button, footer with unsubscribe placeholder\n- Use a max-width of 600px centered layout (standard email width)\n- Default color scheme: clean white background, dark text (#333), accent color #E91A44 for CTA buttons and highlights\n- Write STELLAR copywriting: compelling headlines, engaging opening hooks, scannable body with subheadings, clear and urgent CTAs\n- Make the copy feel human, warm, and persuasive — not robotic or generic\n- The HTML must be production-ready email code that renders beautifully\n- If the user provides image URLs or data URIs, embed them directly in the HTML using <img> tags\n- Typical question flow: topic/angle → target audience → tone/voice → key CTA/goal\n\nCOVER IMAGE FLOW (newsletters only):\n- After generating a newsletter, ALWAYS follow up with a question asking: "Would you like me to generate a cover image for this newsletter?"\n- Provide 4 specific, creative cover image concepts based on the newsletter content as options, plus "No thanks, the newsletter looks great as is" as a 5th option\n- Each option should be descriptive (e.g. "A bold hero shot of [subject] with [brand colors] gradient overlay and the headline text")\n- When the user selects a cover image option, respond with FORMAT 3 (cover_image type) with an extremely detailed prompt\n- The prompt must specify: style, composition, exact colors from the newsletter, subject matter, mood, lighting, and any text to include\n- NEVER generate a cover image without asking first`,
     placeholder: 'Describe your newsletter idea...',
     ctaText: 'Ask the Newsletter AI to help you come up with ideas, edit your newsletter or even write one from scratch! Make sure to give it good context!',
     canvasTitle: 'Canvas',
@@ -87,15 +94,31 @@ const TOOL_CONFIGS = {
     ],
   },
   story: {
-    systemPrompt: `You are an elite email story sequence strategist and copywriter working inside the PuerlyPersonal AI CEO platform. Your job is to help users create compelling multi-email story sequences that nurture leads and drive sales.\n\n${SHARED_RULES}\n\nHTML REQUIREMENTS:\n- Generate a COMPLETE, standalone HTML document that displays ALL emails in the sequence as a visual preview\n- Use modern CSS (inline styles or a single <style> block in <head>) — no external stylesheets, no <script> tags\n- Show each email as a card/section with: email number, subject line, preview of body copy, send timing (e.g. "Day 1", "Day 3")\n- Use table-based layout inside each email card for email client compatibility\n- Make it visually organized: clear separation between emails, numbered sequence, timeline feel\n- Use a max-width of 600px centered layout\n- Default color scheme: clean white background, dark text (#333), accent color #E91A44 for highlights\n- Write STELLAR story-driven copy: emotional hooks, cliffhangers between emails, building towards the offer\n- Include 4-7 emails in the sequence by default\n- Typical question flow: product/offer to sell → audience pain points → story angle → sequence length`,
-    placeholder: 'Describe your email story sequence...',
-    ctaText: 'Ask the Story Sequence AI to craft multi-email story sequences that nurture leads and drive conversions!',
-    canvasTitle: 'Canvas',
+    systemPrompt: `You are an elite Instagram Story sequence strategist and visual content designer working inside the PurelyPersonal AI CEO platform. Your job is to help users create compelling 3-5 frame Instagram Story sequences that tell a story, engage viewers, and drive action.
+
+${SHARED_RULES}
+
+ADDITIONAL FORMAT — STORY SEQUENCE (use this instead of newsletter/html when generating stories):
+{"type":"story_sequence","frames":[{"title":"Frame title","caption":"Short caption overlay text (max 15 words)","image_prompt":"Detailed image generation prompt for this frame. Include: style, composition, colors, text overlays, mood."},...],"summary":"Brief description"}
+
+RULES FOR STORY SEQUENCES:
+- Generate exactly 3-5 frames that tell a cohesive visual story
+- Each frame should flow naturally into the next (beginning → middle → end/CTA)
+- Frame 1: Hook/attention grabber
+- Middle frames: Value/story/content
+- Last frame: CTA (swipe up, link in bio, DM us, etc.)
+- Image prompts must be highly detailed for professional Instagram story generation (1080x1920 portrait)
+- Captions should be punchy, short (max 15 words), suitable for story text overlays
+- Think like a top social media manager — trendy, on-brand, scroll-stopping
+- Typical question flow: brand/topic → target audience → story goal (educate/sell/engage) → visual style preference`,
+    placeholder: 'Describe your Instagram story sequence...',
+    ctaText: 'Ask the Story Sequence AI to craft stunning multi-frame Instagram story sequences that captivate your audience!',
+    canvasTitle: 'Story Sequence',
     emptyText: 'Your story sequence will appear here',
     readyText: 'Your story sequence is ready! Check the canvas on the right.',
     canvasActions: [
-      { label: 'Schedule', style: 'outline' },
-      { label: 'Schedule & Create DM Automation', style: 'primary' },
+      { label: 'Download All', style: 'outline' },
+      { label: 'Schedule Stories', style: 'primary' },
     ],
     canvasEmptyType: 'story-sequence',
   },
@@ -133,19 +156,85 @@ const TOOL_CONFIGS = {
   },
 };
 
+// ── Landing Page Agent (Kimi 2.5 on Railway) ──
+const LANDING_AGENT_URL = import.meta.env.VITE_LANDING_AGENT_URL || 'https://landing-page-agent-production-b414.up.railway.app';
+
+async function streamFromLandingAgent({ endpoint, body, onChunk, onStatus, abortSignal }) {
+  // Step 1: POST to create job
+  const submitRes = await fetch(`${LANDING_AGENT_URL}${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: abortSignal,
+  });
+
+  if (!submitRes.ok) {
+    const errText = await submitRes.text().catch(() => 'Unknown error');
+    throw new Error(errText);
+  }
+
+  const { jobId } = await submitRes.json();
+  if (!jobId) throw new Error('No job ID returned');
+
+  // Step 2: GET SSE stream for the job
+  const streamRes = await fetch(`${LANDING_AGENT_URL}/stream/${jobId}`, {
+    signal: abortSignal,
+  });
+
+  if (!streamRes.ok) {
+    const errText = await streamRes.text().catch(() => 'Unknown error');
+    throw new Error(errText);
+  }
+
+  const reader = streamRes.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalContent = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data: ')) continue;
+      const data = trimmed.slice(6);
+      if (data === '[DONE]') continue;
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.type === 'status' && onStatus) onStatus(parsed.text);
+        if (parsed.type === 'chunk') { finalContent = parsed.content; if (onChunk) onChunk(parsed.content); }
+        if (parsed.type === 'done') { finalContent = parsed.content; if (onChunk) onChunk(parsed.content); }
+        if (parsed.type === 'error') throw new Error(parsed.error);
+      } catch (e) {
+        if (e.message && !e.message.includes('JSON')) throw e;
+      }
+    }
+  }
+  return finalContent;
+}
+
 // ── Streaming ──
-async function streamToolResponse(messages, systemPrompt, onChunk, abortSignal) {
+async function streamToolResponse(messages, systemPrompt, onChunk, abortSignal, { searchMode = false } = {}) {
+  const body = {
+    model: 'grok-3-fast',
+    messages: [{ role: 'system', content: systemPrompt }, ...messages],
+    stream: true,
+  };
+  if (searchMode) {
+    body.search_parameters = { mode: 'auto' };
+  }
   const res = await fetch('/api/xai/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${import.meta.env.VITE_XAI_API_KEY}`,
     },
-    body: JSON.stringify({
-      model: 'grok-3-fast',
-      messages: [{ role: 'system', content: systemPrompt }, ...messages],
-      stream: true,
-    }),
+    body: JSON.stringify(body),
     signal: abortSignal,
   });
 
@@ -190,13 +279,54 @@ function tryParseAIResponse(text) {
     if (parsed.type === 'question' && parsed.text && Array.isArray(parsed.options)) {
       return parsed;
     }
-    if (parsed.type === 'newsletter' && typeof parsed.html === 'string') {
+    if ((parsed.type === 'newsletter' || parsed.type === 'html') && typeof parsed.html === 'string') {
+      return parsed;
+    }
+    if (parsed.type === 'story_sequence' && Array.isArray(parsed.frames)) {
+      return parsed;
+    }
+    if (parsed.type === 'cover_image' && typeof parsed.prompt === 'string') {
       return parsed;
     }
   } catch {
     // not valid JSON
   }
   return null;
+}
+
+// Build system prompt with brand DNA injected
+function buildToolSystemPrompt(basePrompt, brandDna) {
+  let prompt = basePrompt;
+  if (brandDna) {
+    // Replace default accent color with brand primary
+    const primary = brandDna.colors?.primary || '#E91A44';
+    prompt = prompt.replace(/accent color #E91A44/g, () => `accent color ${primary}`);
+
+    let section = '\n\n=== BRAND DNA (USE THESE IN ALL DESIGNS) ===\n';
+    if (brandDna.description) section += `Brand Description: ${brandDna.description}\n`;
+    if (brandDna.main_font) section += `Main Font: ${brandDna.main_font}\n`;
+    if (brandDna.secondary_font) section += `Secondary Font: ${brandDna.secondary_font}\n`;
+    if (brandDna.colors) {
+      const c = brandDna.colors;
+      if (c.primary) section += `Primary Color: ${c.primary}\n`;
+      if (c.text) section += `Text Color: ${c.text}\n`;
+      if (c.secondary) section += `Secondary Color: ${c.secondary}\n`;
+    }
+    section += `\nCRITICAL: Use the brand colors, fonts, and identity listed above in all generated designs. Replace default colors with these brand colors.\n`;
+    prompt += section;
+  }
+  return prompt;
+}
+
+// Insert cover image into newsletter HTML
+function insertCoverImage(html, imgSrc) {
+  const bodyMatch = html.match(/<body[^>]*>/i);
+  if (bodyMatch) {
+    const idx = html.indexOf(bodyMatch[0]) + bodyMatch[0].length;
+    const imgTag = `<div style="text-align:center;margin:0 auto;max-width:600px;"><img src="${imgSrc}" alt="Newsletter Cover" style="width:100%;height:auto;display:block;" /></div>`;
+    return html.slice(0, idx) + imgTag + html.slice(idx);
+  }
+  return `<img src="${imgSrc}" alt="Newsletter Cover" style="width:100%;max-width:600px;height:auto;display:block;margin:0 auto;" />` + html;
 }
 
 function extractStreamingHtml(text) {
@@ -302,6 +432,92 @@ const CONTEXT_CATEGORIES = [
     })),
   },
 ];
+
+// ── Story Sequence React Flow Canvas ──
+const STORY_W = 150;
+const STAGGER_X = 200;
+const STAGGER_Y = 340; // 267px card height + 73px gap for edge
+
+function StoryCardNode({ data }) {
+  return (
+    <div className="sf-card">
+      <Handle type="target" position={Position.Top} className="sf-handle" />
+      <div className="sf-card-inner">
+        {data.loading ? (
+          <div className="sf-card-loading">
+            <span className="mkt-msg-dots"><span /><span /><span /></span>
+          </div>
+        ) : data.imageSrc ? (
+          <img src={data.imageSrc} alt={data.caption} className="sf-card-img" />
+        ) : (
+          <div className="sf-card-empty">
+            <div className="mkt-story-ig-icon" />
+          </div>
+        )}
+        <div className="sf-card-overlay">
+          <span className="sf-card-num">Story {data.index + 1}</span>
+          {data.caption && <span className="sf-card-caption">{data.caption}</span>}
+        </div>
+      </div>
+      <Handle type="source" position={Position.Bottom} className="sf-handle" />
+    </div>
+  );
+}
+
+const storyNodeTypes = { storyCard: StoryCardNode };
+
+function StoryFlowCanvas({ frames }) {
+  const nodes = useMemo(() =>
+    frames.map((f, i) => ({
+      id: `story-${i}`,
+      type: 'storyCard',
+      position: {
+        x: (i % 2 === 0 ? 0 : STAGGER_X),
+        y: i * STAGGER_Y,
+      },
+      data: { ...f, index: i },
+      draggable: false,
+      selectable: false,
+      connectable: false,
+    })),
+  [frames]);
+
+  const edges = useMemo(() =>
+    frames.slice(0, -1).map((_, i) => ({
+      id: `e-${i}`,
+      source: `story-${i}`,
+      target: `story-${i + 1}`,
+      type: 'smoothstep',
+      animated: true,
+      style: { stroke: '#c8c8cc', strokeWidth: 2, strokeDasharray: '8 4' },
+      sourceHandle: null,
+      targetHandle: null,
+    })),
+  [frames]);
+
+  return (
+    <div className="sf-canvas">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={storyNodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.4 }}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
+        panOnDrag
+        zoomOnScroll
+        zoomOnPinch
+        minZoom={0.2}
+        maxZoom={2}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background color="#e5e7eb" gap={20} size={1} />
+      </ReactFlow>
+    </div>
+  );
+}
 
 // ── Interactive DM Flow Canvas (pan & zoom, auto-fit) ──
 const DM_CW = 1900, DM_CH = 280;
@@ -530,22 +746,25 @@ function DmFlowView() {
   );
 }
 
-function ToolTab({ config }) {
+function ToolTab({ config, activeTool, brandDna }) {
   // Existing state
   const [chatInput, setChatInput] = useState('');
   const [splitPercent, setSplitPercent] = useState(50);
   const [contextOpen, setContextOpen] = useState(false);
   const [hoveredCat, setHoveredCat] = useState(null);
   const [selectedItems, setSelectedItems] = useState(new Set());
+  const [researchMode, setResearchMode] = useState(false);
 
   // Chat state
   const [messages, setMessages] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingText, setGeneratingText] = useState('');
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [customTyping, setCustomTyping] = useState(false);
   const [customText, setCustomText] = useState('');
   const [canvasHtml, setCanvasHtml] = useState('');
+  const [storyFrames, setStoryFrames] = useState([]); // [{ title, caption, image_prompt, imageSrc, loading }]
   const [uploadedFiles, setUploadedFiles] = useState([]); // { id, name, type, dataUrl?, textContent?, size }
   const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false);
   const [copyCodeOpen, setCopyCodeOpen] = useState(false);
@@ -564,6 +783,22 @@ function ToolTab({ config }) {
 
   const chatStarted = chatMessages.length > 0;
 
+  // Cycle generating status text
+  useEffect(() => {
+    if (!isGenerating) { setGeneratingText(''); return; }
+    const phrases = [
+      'Thinking...', 'Analyzing your request...', 'Crafting the design...',
+      'Writing copy...', 'Polishing layout...', 'Almost there...',
+    ];
+    let i = 0;
+    setGeneratingText(phrases[0]);
+    const interval = setInterval(() => {
+      i = (i + 1) % phrases.length;
+      setGeneratingText(phrases[i]);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isGenerating]);
+
   // Auto-scroll chat
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -574,10 +809,14 @@ function ToolTab({ config }) {
   // Auto-resize textarea whenever chatInput changes (including programmatic clears)
   useEffect(() => {
     const el = textareaRef.current;
-    if (el) {
-      el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+    if (!el) return;
+    if (!chatInput) {
+      // Reset to CSS default height without jarring snap
+      el.style.height = '';
+      return;
     }
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
   }, [chatInput]);
 
   // Write HTML directly into iframe document (avoids srcDoc reload flash)
@@ -761,21 +1000,59 @@ function ToolTab({ config }) {
     abortRef.current = new AbortController();
 
     try {
-      const fullContent = await streamToolResponse(
-        newMessages,
-        config.systemPrompt,
-        (chunk) => {
-          // While streaming, try to extract HTML for live preview
-          if (chunk.includes('"type":"newsletter"') || chunk.includes('"type": "newsletter"')) {
-            let html = extractStreamingHtml(chunk);
-            if (html) {
-              html = replaceImagePlaceholders(html, filesSnapshot);
-              setCanvasHtml(html);
+      let fullContent;
+
+      // Route landing page requests through Kimi 2.5 agent on Railway
+      if (activeTool === 'landing' || activeTool === 'squeeze') {
+        const isEdit = canvasHtml && !isFirstMessage;
+
+        fullContent = await streamFromLandingAgent({
+          endpoint: isEdit ? '/edit' : '/generate',
+          body: isEdit
+            ? { currentHtml: canvasHtml, instruction: text.trim(), conversationHistory: messages, brandDna: brandDna || null }
+            : { messages: newMessages, brandDna: brandDna || null },
+          onChunk: (chunk) => {
+            // Try to extract HTML for live preview while streaming
+            if (chunk.includes('"type":"html"') || chunk.includes('"type": "html"') ||
+                chunk.includes('"type":"newsletter"') || chunk.includes('"type": "newsletter"')) {
+              let html = extractStreamingHtml(chunk);
+              if (html) {
+                html = replaceImagePlaceholders(html, filesSnapshot);
+                setCanvasHtml(html);
+              }
             }
-          }
-        },
-        abortRef.current.signal,
-      );
+          },
+          onStatus: (statusText) => {
+            setChatMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.isStatus) return [...prev.slice(0, -1), { ...last, text: statusText }];
+              return [...prev, { id: `status-${Date.now()}`, role: 'assistant', text: statusText, isStatus: true }];
+            });
+          },
+          abortSignal: abortRef.current.signal,
+        });
+      } else {
+        const systemPrompt = buildToolSystemPrompt(config.systemPrompt, brandDna);
+        fullContent = await streamToolResponse(
+          newMessages,
+          systemPrompt,
+          (chunk) => {
+            // While streaming, try to extract HTML for live preview
+            if (chunk.includes('"type":"newsletter"') || chunk.includes('"type": "newsletter"')) {
+              let html = extractStreamingHtml(chunk);
+              if (html) {
+                html = replaceImagePlaceholders(html, filesSnapshot);
+                setCanvasHtml(html);
+              }
+            }
+          },
+          abortRef.current.signal,
+          { searchMode: researchMode },
+        );
+      }
+
+      // Remove status messages
+      setChatMessages((prev) => prev.filter((m) => !m.isStatus));
 
       // Parse the final response
       const parsed = tryParseAIResponse(fullContent);
@@ -785,22 +1062,88 @@ function ToolTab({ config }) {
       if (parsed?.type === 'question') {
         setCurrentQuestion({ text: parsed.text, options: parsed.options });
         setChatMessages((prev) => [...prev, { id: `msg-${Date.now()}-assistant`, role: 'assistant', text: parsed.text }]);
-      } else if (parsed?.type === 'newsletter') {
+      } else if (parsed?.type === 'cover_image') {
+        // Generate cover image and inject into newsletter
+        setChatMessages((prev) => [...prev, { id: `msg-${Date.now()}-generating`, role: 'assistant', text: 'Generating your cover image...' }]);
+        try {
+          const brandData = brandDna ? {
+            photoUrls: brandDna.photo_urls || [],
+            logoUrl: brandDna.logo_url || null,
+            colors: brandDna.colors || {},
+            mainFont: brandDna.main_font || null,
+          } : null;
+          const result = await generateImage(parsed.prompt, 'newsletter', brandData);
+          const allowedMime = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+          if (result.image && allowedMime.includes(result.image.mimeType)) {
+            const src = `data:${result.image.mimeType};base64,${result.image.data}`;
+            setCanvasHtml((prev) => insertCoverImage(prev, src));
+            setChatMessages((prev) => [
+              ...prev.filter((m) => !m.id?.includes('-generating')),
+              { id: `msg-${Date.now()}-assistant`, role: 'assistant', text: 'Cover image generated and added to your newsletter!' },
+            ]);
+          }
+        } catch (imgErr) {
+          setChatMessages((prev) => [
+            ...prev.filter((m) => !m.id?.includes('-generating')),
+            { id: `msg-${Date.now()}-err`, role: 'assistant', text: `Failed to generate cover image: ${imgErr.message}` },
+          ]);
+        }
+      } else if (parsed?.type === 'story_sequence') {
+        // Initialize frames with loading state
+        const frames = parsed.frames.map((f, i) => ({
+          ...f,
+          imageSrc: null,
+          loading: true,
+          id: i,
+        }));
+        setStoryFrames(frames);
+        setChatMessages((prev) => [...prev, { id: `msg-${Date.now()}-assistant`, role: 'assistant', text: parsed.summary || `Generating ${frames.length} story frames...` }]);
+
+        // Generate all images in parallel
+        const brandData = brandDna ? {
+          photoUrls: brandDna.photo_urls || [],
+          logoUrl: brandDna.logo_url || null,
+          colors: brandDna.colors || {},
+          mainFont: brandDna.main_font || null,
+        } : null;
+
+        await Promise.allSettled(
+          frames.map(async (frame, idx) => {
+            try {
+              const result = await generateImage(frame.image_prompt, 'instagram_story', brandData);
+              const allowedMime = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+              if (result.image && allowedMime.includes(result.image.mimeType)) {
+                const src = `data:${result.image.mimeType};base64,${result.image.data}`;
+                setStoryFrames((prev) => prev.map((f, i) => i === idx ? { ...f, imageSrc: src, loading: false } : f));
+              } else {
+                setStoryFrames((prev) => prev.map((f, i) => i === idx ? { ...f, loading: false } : f));
+              }
+            } catch {
+              setStoryFrames((prev) => prev.map((f, i) => i === idx ? { ...f, loading: false } : f));
+            }
+          })
+        );
+
+        setChatMessages((prev) => [...prev, { id: `msg-${Date.now()}-done`, role: 'assistant', text: 'All story frames generated! Check the canvas.' }]);
+      } else if (parsed?.type === 'newsletter' || parsed?.type === 'html') {
         const finalHtml = replaceImagePlaceholders(parsed.html, filesSnapshot);
         setCanvasHtml(finalHtml);
-        setChatMessages((prev) => [...prev, { id: `msg-${Date.now()}-assistant`, role: 'assistant', text: config.readyText }]);
+        setChatMessages((prev) => [...prev, { id: `msg-${Date.now()}-assistant`, role: 'assistant', text: parsed.summary || config.readyText }]);
       } else {
         // Fallback — show raw text
         setChatMessages((prev) => [...prev, { id: `msg-${Date.now()}-assistant`, role: 'assistant', text: fullContent.slice(0, 500) }]);
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
-        setChatMessages((prev) => [...prev, { id: `msg-${Date.now()}-err`, role: 'assistant', text: 'Something went wrong. Please try again.' }]);
+        setChatMessages((prev) => [
+          ...prev.filter((m) => !m.isStatus),
+          { id: `msg-${Date.now()}-err`, role: 'assistant', text: 'Something went wrong. Please try again.' },
+        ]);
       }
     } finally {
       setIsGenerating(false);
     }
-  }, [messages, isGenerating, selectedItems, uploadedFiles, canvasHtml, config]);
+  }, [messages, isGenerating, selectedItems, uploadedFiles, canvasHtml, config, activeTool, brandDna, researchMode]);
 
   // Handle send button / enter key
   const handleSend = () => {
@@ -975,8 +1318,9 @@ function ToolTab({ config }) {
             ))}
             {isGenerating && (
               <div className="mkt-msg-row mkt-msg-row--assistant">
-                <div className="mkt-msg mkt-msg--assistant">
+                <div className="mkt-msg mkt-msg--assistant mkt-msg--generating">
                   <span className="mkt-msg-dots"><span /><span /><span /></span>
+                  <span className="mkt-generating-text">{generatingText}</span>
                 </div>
               </div>
             )}
@@ -1091,6 +1435,13 @@ function ToolTab({ config }) {
                   </div>
                 )}
               </div>
+              <button
+                className={`mkt-research-toggle ${researchMode ? 'mkt-research-toggle--active' : ''}`}
+                onClick={() => setResearchMode((v) => !v)}
+                title="Enable web research mode"
+              >
+                <Globe size={13} /> Research
+              </button>
               {selectedItems.size > 0 && (
                 <div className="mkt-ctx-pills">
                   {getSelectedItemDetails().map((item) => (
@@ -1252,7 +1603,10 @@ function ToolTab({ config }) {
             title="Preview"
             sandbox="allow-same-origin"
           />
-          {!canvasHtml && config.canvasEmptyType === 'story-sequence' && (
+          {config.canvasEmptyType === 'story-sequence' && storyFrames.length > 0 && (
+            <StoryFlowCanvas frames={storyFrames} />
+          )}
+          {config.canvasEmptyType === 'story-sequence' && storyFrames.length === 0 && !canvasHtml && (
             <div className="mkt-canvas-empty mkt-canvas-empty--story">
               <div className="mkt-story-flow">
                 <div className="mkt-story-card mkt-story-card--left">
@@ -1328,6 +1682,21 @@ function ToolTab({ config }) {
 
 export default function Marketing() {
   const [activeTab, setActiveTab] = useState('newsletter');
+  const [brandDna, setBrandDna] = useState(null);
+
+  // Load Brand DNA once on mount
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session?.user) return;
+      const { data, error } = await supabase
+        .from('brand_dna')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .single();
+      if (error) { console.error('Failed to load brand DNA:', error.message); return; }
+      if (data) setBrandDna(data);
+    }).catch((err) => console.error('Brand DNA load error:', err));
+  }, []);
 
   return (
     <div className="marketing-page">
@@ -1349,7 +1718,7 @@ export default function Marketing() {
         )}
       </div>
       <div className="marketing-content">
-        <ToolTab config={TOOL_CONFIGS[activeTab]} key={activeTab} />
+        <ToolTab config={TOOL_CONFIGS[activeTab]} activeTool={activeTab} brandDna={brandDna} key={activeTab} />
       </div>
     </div>
   );

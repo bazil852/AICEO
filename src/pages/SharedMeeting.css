@@ -1,0 +1,114 @@
+.shared-meeting-loading,
+.shared-meeting-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg-white);
+  color: var(--text-muted);
+  gap: 12px;
+}
+.shared-meeting-error h2 {
+  color: var(--text-primary);
+  margin: 0;
+}
+.shared-meeting-error p {
+  margin: 0;
+}
+
+.shared-meeting {
+  min-height: 100vh;
+  background: var(--bg-white);
+  color: var(--text-primary);
+}
+
+.shared-meeting-header {
+  border-bottom: 1px solid var(--border-light);
+  padding: 12px 24px;
+}
+
+.shared-meeting-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--brand-red);
+}
+
+.shared-meeting-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px 24px;
+}
+
+.shared-meeting-top {
+  margin-bottom: 20px;
+}
+.shared-meeting-top h1 {
+  font-size: 22px;
+  margin: 8px 0;
+}
+
+.shared-meeting-platform {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.shared-meeting-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.shared-meeting-body {
+  display: flex;
+  gap: 16px;
+}
+
+.shared-meeting-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.shared-meeting-transcript {
+  background: var(--bg-white);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  max-height: 600px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.shared-meeting-transcript h3 {
+  margin: 0;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.shared-meeting-right {
+  width: 400px;
+  flex-shrink: 0;
+  background: var(--bg-white);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  overflow: hidden;
+  max-height: 700px;
+}
+
+@media (max-width: 900px) {
+  .shared-meeting-body { flex-direction: column; }
+  .shared-meeting-right { width: 100%; }
+}

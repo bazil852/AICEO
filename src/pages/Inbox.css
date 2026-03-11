@@ -1247,10 +1247,73 @@
 
 .inbox-account-modal-hint {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-  margin-top: 4px;
-  line-height: 1.4;
+  margin-top: 8px;
+  line-height: 1.5;
+  background: var(--bg-light);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.inbox-account-modal-hint strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.inbox-connect-steps {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.inbox-connect-steps a {
+  color: var(--brand-red);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.inbox-connect-steps a:hover {
+  text-decoration: underline;
+}
+
+.inbox-provider-buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.inbox-provider-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+  border-radius: 12px;
+  border: 2px solid var(--border-light);
+  background: var(--bg-white);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-secondary);
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.inbox-provider-btn:hover {
+  border-color: var(--text-muted);
+}
+
+.inbox-provider-btn--active {
+  border-color: var(--brand-red);
+  background: var(--brand-red-light, #fef2f2);
+  color: var(--text-primary);
+}
+
+.inbox-provider-btn svg {
+  flex-shrink: 0;
 }
 
 .modal-field-row {
@@ -1269,17 +1332,19 @@
 /* ── Responsive ── */
 @media (max-width: 900px) {
   .inbox-page {
-    height: auto;
-    min-height: 100vh;
+    height: 100vh;
+    height: 100dvh;
   }
 
   .inbox-layout {
     flex-direction: column;
-    flex: none;
+    flex: 1;
+    min-height: 0;
   }
 
   .inbox-sidebar {
     width: 100%;
+    flex-shrink: 0;
     border-right: none;
     border-bottom: 1px solid var(--border-light);
     display: flex;
@@ -1296,15 +1361,26 @@
     display: none;
   }
 
+  .inbox-search {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--bg-white);
+  }
+
   .inbox-list {
     width: 100%;
     border-right: none;
     border-bottom: 1px solid var(--border-light);
-    max-height: 300px;
+    flex: 1;
+    min-height: 0;
+    max-height: none;
   }
 
   .inbox-detail {
-    min-height: 400px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
   }
 }
 
@@ -1355,7 +1431,6 @@
 
   .inbox-list {
     width: 100%;
-    max-height: none;
   }
 
   .inbox-detail-header {

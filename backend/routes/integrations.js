@@ -6,10 +6,12 @@ import * as fathom from '../services/integrations/fathom.js';
 import * as stripeInt from '../services/integrations/stripe-int.js';
 import * as whop from '../services/integrations/whop.js';
 import * as gohighlevel from '../services/integrations/gohighlevel.js';
+import * as shopify from '../services/integrations/shopify.js';
+import * as kajabi from '../services/integrations/kajabi.js';
 
 const router = Router();
 
-const services = { fireflies, fathom, stripe: stripeInt, whop, gohighlevel };
+const services = { fireflies, fathom, stripe: stripeInt, whop, gohighlevel, shopify, kajabi };
 const VALID_PROVIDERS = Object.keys(services);
 
 // ─── List all user integrations (no keys in response) ───
@@ -37,7 +39,7 @@ router.post('/api/integrations/:provider/connect', async (req, res) => {
     return res.status(400).json({ error: `Invalid provider: ${provider}` });
   }
 
-  const { api_key } = req.body;
+  const { api_key, metadata: reqMetadata } = req.body;
   if (!api_key) return res.status(400).json({ error: 'api_key is required' });
 
   const service = services[provider];
@@ -45,7 +47,7 @@ router.post('/api/integrations/:provider/connect', async (req, res) => {
   // Validate the API key against the external service
   try {
     console.log(`[integrations] Validating ${provider} API key for user ${userId}...`);
-    const validationResult = await service.validate(api_key);
+    const validationResult = await service.validate(api_key, reqMetadata);
 
     // Build integration record
     const record = {
@@ -57,10 +59,10 @@ router.post('/api/integrations/:provider/connect', async (req, res) => {
       updated_at: new Date().toISOString(),
     };
 
-    // For Fireflies, generate webhook URL and secret
-    if (provider === 'fireflies') {
+    // Generate webhook URL and secret for providers that support webhooks
+    if (['fireflies', 'shopify', 'kajabi', 'gohighlevel'].includes(provider)) {
       const baseUrl = process.env.API_BASE_URL || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : 'http://localhost:3001');
-      record.webhook_url = `${baseUrl}/api/webhooks/fireflies/${userId}`;
+      record.webhook_url = `${baseUrl}/api/webhooks/${provider}/${userId}`;
       record.webhook_secret = crypto.randomBytes(16).toString('hex');
     }
 
@@ -180,6 +182,28 @@ router.get('/api/integration-context', async (req, res) => {
     }
   }
 
+  // PurelyPersonal meetings (from meetings table)
+  const { data: ppMeetings } = await supabase
+    .from('meetings')
+    .select('title, platform, started_at, duration_seconds, summary, action_items, participants')
+    .eq('user_id', userId)
+    .eq('recall_bot_status', 'processed')
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  if (ppMeetings?.length) {
+    sections.push('## PurelyPersonal Meeting Notes');
+    for (const m of ppMeetings) {
+      const date = m.started_at ? new Date(m.started_at).toLocaleDateString() : '';
+      sections.push(`### ${m.title || 'Meeting'} (${m.platform || 'unknown'}) — ${date}`);
+      if (m.summary?.overview) sections.push(`Summary: ${typeof m.summary.overview === 'string' ? m.summary.overview : JSON.stringify(m.summary.overview)}`);
+      if (m.action_items?.length) {
+        sections.push(`Action Items: ${m.action_items.map(a => a.text).join('; ')}`);
+      }
+      sections.push('');
+    }
+  }
+
   if (grouped.stripe?.length) {
     sections.push('## Stripe Data');
     const payments = grouped.stripe.filter(d => d.data_type === 'payment');
@@ -211,6 +235,67 @@ router.get('/api/integration-context', async (req, res) => {
     sections.push('## Whop Data');
     for (const item of grouped.whop) {
       sections.push(`- [${item.data_type}] ${item.title}`);
+    }
+    sections.push('');
+  }
+
+  if (grouped.shopify?.length) {
+    sections.push('## Shopify Data');
+    const orders = grouped.shopify.filter(d => d.data_type === 'payment');
+    const prods = grouped.shopify.filter(d => d.data_type === 'product');
+    const custs = grouped.shopify.filter(d => d.data_type === 'customer');
+
+    if (orders.length) {
+      sections.push(`### Recent Orders (${orders.length})`);
+      for (const o of orders.slice(0, 10)) {
+        sections.push(`- ${o.title}`);
+      }
+    }
+    if (prods.length) {
+      sections.push(`### Products (${prods.length})`);
+      for (const p of prods.slice(0, 10)) {
+        sections.push(`- ${p.title}${p.metadata?.price ? ` ($${p.metadata.price})` : ''}`);
+      }
+    }
+    if (custs.length) {
+      sections.push(`### Customers (${custs.length})`);
+      for (const c of custs.slice(0, 10)) {
+        sections.push(`- ${c.title}${c.metadata?.email ? ` (${c.metadata.email})` : ''}`);
+      }
+    }
+    sections.push('');
+  }
+
+  if (grouped.kajabi?.length) {
+    sections.push('## Kajabi Data');
+    const sales = grouped.kajabi.filter(d => d.data_type === 'payment');
+    const offers = grouped.kajabi.filter(d => d.data_type === 'product');
+    const subs = grouped.kajabi.filter(d => d.data_type === 'subscription');
+    const members = grouped.kajabi.filter(d => d.data_type === 'customer');
+
+    if (sales.length) {
+      sections.push(`### Sales (${sales.length})`);
+      for (const s of sales.slice(0, 10)) {
+        sections.push(`- ${s.title}`);
+      }
+    }
+    if (offers.length) {
+      sections.push(`### Offers (${offers.length})`);
+      for (const o of offers) {
+        sections.push(`- ${o.title}`);
+      }
+    }
+    if (subs.length) {
+      sections.push(`### Subscriptions (${subs.length})`);
+      for (const s of subs) {
+        sections.push(`- ${s.title}`);
+      }
+    }
+    if (members.length) {
+      sections.push(`### Members (${members.length})`);
+      for (const m of members.slice(0, 10)) {
+        sections.push(`- ${m.title}${m.metadata?.email ? ` (${m.metadata.email})` : ''}`);
+      }
     }
     sections.push('');
   }

@@ -28,6 +28,30 @@ async function getWhopKey(userId) {
   return data.api_key;
 }
 
+async function getShopifyIntegration(userId) {
+  const { data } = await supabase
+    .from('integrations')
+    .select('api_key, metadata')
+    .eq('user_id', userId)
+    .eq('provider', 'shopify')
+    .eq('is_active', true)
+    .single();
+  if (!data?.api_key) throw new Error('Shopify not connected. Go to Settings to connect your Shopify store.');
+  return { apiKey: data.api_key, storeUrl: data.metadata?.store_url };
+}
+
+async function getKajabiKey(userId) {
+  const { data } = await supabase
+    .from('integrations')
+    .select('api_key')
+    .eq('user_id', userId)
+    .eq('provider', 'kajabi')
+    .eq('is_active', true)
+    .single();
+  if (!data?.api_key) throw new Error('Kajabi not connected. Go to Settings to connect your Kajabi account.');
+  return data.api_key;
+}
+
 // ─── List products ───
 router.get('/api/products', async (req, res) => {
   const userId = req.user.id;
@@ -144,6 +168,67 @@ router.post('/api/products', async (req, res) => {
       dbRow.whop_product_id = whopProduct.id;
       dbRow.whop_plan_id = whopPlan.id;
       dbRow.payment_link_url = whopPlan.checkout_link || whopProduct.checkout_link || null;
+    }
+    } else if (processor === 'shopify') {
+      const { apiKey: shopifyKey, storeUrl } = await getShopifyIntegration(userId);
+
+      const createRes = await fetch(`${storeUrl}/admin/api/2024-01/products.json`, {
+        method: 'POST',
+        headers: {
+          'X-Shopify-Access-Token': shopifyKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          product: {
+            title: name,
+            body_html: description || '',
+            product_type: type,
+            variants: [{
+              price: (priceCents / 100).toFixed(2),
+              requires_shipping: false,
+            }],
+          },
+        }),
+      });
+
+      if (!createRes.ok) {
+        const errBody = await createRes.text();
+        throw new Error(`Shopify product creation failed: ${errBody}`);
+      }
+
+      const { product: shopifyProduct } = await createRes.json();
+      dbRow.shopify_product_id = String(shopifyProduct.id);
+      dbRow.shopify_variant_id = String(shopifyProduct.variants?.[0]?.id || '');
+      // Shopify checkout URL
+      const shopDomain = storeUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      dbRow.payment_link_url = `https://${shopDomain}/cart/${shopifyProduct.variants?.[0]?.id}:1`;
+
+    } else if (processor === 'kajabi') {
+      const kajabiKey = await getKajabiKey(userId);
+
+      const createRes = await fetch('https://kajabi.com/api/v1/offers', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${kajabiKey}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          title: name,
+          description: description || '',
+          price: (priceCents / 100).toFixed(2),
+          payment_type: isMonthly ? 'subscription' : 'one_time',
+        }),
+      });
+
+      if (!createRes.ok) {
+        const errBody = await createRes.text();
+        throw new Error(`Kajabi offer creation failed: ${errBody}`);
+      }
+
+      const kajabiOffer = await createRes.json();
+      dbRow.kajabi_offer_id = String(kajabiOffer.id);
+      dbRow.payment_link_url = kajabiOffer.checkout_url || null;
     }
     // processor === 'none' — just save to DB, no external API calls
 

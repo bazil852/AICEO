@@ -1,7 +1,20 @@
 import { Router } from 'express';
 import { supabase } from '../services/storage.js';
+import { syncContactToGHL, syncContactFromGHL } from '../services/integrations/gohighlevel.js';
 
 const router = Router();
+
+// Helper: get active GHL integration for a user
+async function getGHLIntegration(userId) {
+  const { data } = await supabase
+    .from('integrations')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('provider', 'gohighlevel')
+    .eq('is_active', true)
+    .single();
+  return data;
+}
 
 // ─── List all contacts ───
 router.get('/api/contacts', async (req, res) => {
@@ -39,11 +52,25 @@ router.post('/api/contacts', async (req, res) => {
       notes: notes || '',
       socials: socials || { instagram: [], linkedin: [], x: [] },
       source: 'manual',
+      ghl_sync_status: 'pending',
     }, { onConflict: 'user_id,email', ignoreDuplicates: false })
     .select()
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+
+  // Push to GHL in background (fire-and-forget)
+  getGHLIntegration(userId).then(integration => {
+    if (integration) {
+      syncContactToGHL(data, { ...integration, user_id: userId }).catch(err => {
+        console.log(`[contacts] GHL push failed for new contact: ${err.message}`);
+      });
+    } else {
+      // No GHL integration, set status back to none
+      supabase.from('contacts').update({ ghl_sync_status: 'none' }).eq('id', data.id).then(() => {});
+    }
+  });
+
   res.json({ contact: data });
 });
 
@@ -67,6 +94,16 @@ router.put('/api/contacts/:id', async (req, res) => {
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+
+  // Push update to GHL in background
+  getGHLIntegration(userId).then(integration => {
+    if (integration) {
+      syncContactToGHL(data, { ...integration, user_id: userId }).catch(err => {
+        console.log(`[contacts] GHL push failed for update: ${err.message}`);
+      });
+    }
+  });
+
   res.json({ contact: data });
 });
 
@@ -74,6 +111,18 @@ router.put('/api/contacts/:id', async (req, res) => {
 router.delete('/api/contacts/:id', async (req, res) => {
   const userId = req.user.id;
   if (userId === 'anonymous') return res.status(401).json({ error: 'Auth required' });
+
+  // Fetch contact before deleting to log GHL link
+  const { data: contact } = await supabase
+    .from('contacts')
+    .select('ghl_contact_id')
+    .eq('id', req.params.id)
+    .eq('user_id', userId)
+    .single();
+
+  if (contact?.ghl_contact_id) {
+    console.log(`[contacts] Deleting locally — GHL contact ${contact.ghl_contact_id} preserved in GHL`);
+  }
 
   const { error } = await supabase
     .from('contacts')
@@ -83,6 +132,37 @@ router.delete('/api/contacts/:id', async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
+});
+
+// ─── Manual single-contact GHL sync ───
+router.post('/api/contacts/:id/sync-ghl', async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.status(401).json({ error: 'Auth required' });
+
+  const { data: contact, error: cErr } = await supabase
+    .from('contacts')
+    .select('*')
+    .eq('id', req.params.id)
+    .eq('user_id', userId)
+    .single();
+
+  if (cErr || !contact) return res.status(404).json({ error: 'Contact not found' });
+
+  const integration = await getGHLIntegration(userId);
+  if (!integration) return res.status(400).json({ error: 'GoHighLevel not connected' });
+
+  try {
+    await syncContactToGHL(contact, { ...integration, user_id: userId });
+    // Re-fetch to get updated sync status
+    const { data: updated } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('id', contact.id)
+      .single();
+    res.json({ contact: updated || contact });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── Get contact detail (recordings, emails, products) ───
@@ -184,6 +264,38 @@ router.get('/api/contacts/:id/detail', async (req, res) => {
       }));
     }
   }
+
+  // 4. PurelyPersonal meetings linked to this contact
+  let ppMeetings = [];
+  const { data: linkedMeetings } = await supabase
+    .from('meeting_contacts')
+    .select('meeting_id, role')
+    .eq('contact_id', req.params.id);
+
+  if (linkedMeetings?.length) {
+    const meetingIds = linkedMeetings.map(lm => lm.meeting_id);
+    const { data: meetingData } = await supabase
+      .from('meetings')
+      .select('id, title, platform, started_at, duration_seconds, recall_bot_status, summary')
+      .in('id', meetingIds)
+      .order('started_at', { ascending: false });
+
+    if (meetingData) {
+      ppMeetings = meetingData.map(m => ({
+        id: m.id,
+        name: m.title || 'Meeting',
+        date: m.started_at ? new Date(m.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '',
+        duration: m.duration_seconds ? `${Math.round(m.duration_seconds / 60)} min` : '',
+        provider: 'purelypersonal',
+        platform: m.platform,
+        summary: m.summary?.overview || '',
+        status: m.recall_bot_status,
+      }));
+    }
+  }
+
+  // Merge PurelyPersonal meetings into recordings
+  recordings = [...ppMeetings, ...recordings];
 
   res.json({ recordings, emails, products });
 });
@@ -314,6 +426,31 @@ router.post('/api/contacts/sync', async (req, res) => {
         }, { onConflict: 'user_id,email', ignoreDuplicates: true });
         if (!error) synced++;
       }
+    }
+  }
+
+  // 4. Sync from GoHighLevel contacts (integration_data → contacts table)
+  const { data: ghlContacts } = await supabase
+    .from('integration_data')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('provider', 'gohighlevel')
+    .eq('data_type', 'contact')
+    .limit(500);
+
+  if (ghlContacts) {
+    for (const ghl of ghlContacts) {
+      const ghlContact = {
+        id: ghl.external_id,
+        firstName: ghl.metadata?.first_name || '',
+        lastName: ghl.metadata?.last_name || '',
+        email: ghl.metadata?.email || '',
+        phone: ghl.metadata?.phone || '',
+        companyName: ghl.metadata?.company || '',
+        tags: ghl.metadata?.tags || [],
+      };
+      const result = await syncContactFromGHL(ghlContact, userId);
+      if (result) synced++;
     }
   }
 

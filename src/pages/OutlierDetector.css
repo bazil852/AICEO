@@ -700,4 +700,8 @@
   .od-card-info {
     padding: 10px;
   }
+
+  .od-add-context-btn {
+    opacity: 1;
+  }
 }

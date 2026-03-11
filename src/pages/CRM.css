@@ -904,6 +904,28 @@
   animation: crm-spin 0.6s linear infinite;
 }
 
+/* ── Add Contact Button (toolbar) ── */
+.crm-add-contact-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  background: var(--brand-red);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.crm-add-contact-btn:hover {
+  background: var(--brand-red-hover, #c8102e);
+}
+
 /* ── Add Contact Bar ── */
 .crm-add-bar {
   display: flex;
@@ -1060,4 +1082,147 @@
     padding: 10px 12px;
     font-size: 12.5px;
   }
+
+  .crm-add-contact-label {
+    display: none;
+  }
+
+  .crm-add-contact-btn {
+    padding: 7px 10px;
+  }
+
+  .crm-add-bar {
+    flex-wrap: wrap;
+  }
+
+  .crm-add-input {
+    min-width: 0;
+    flex: 1 1 calc(50% - 4px);
+  }
+}
+
+/* ── GHL Sync Badges ── */
+.crm-cell-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.crm-cell-name-text {
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crm-ghl-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.crm-ghl-badge--synced {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.crm-ghl-badge--pending {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.crm-ghl-badge--error {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.crm-ghl-badge--local_only {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+/* Kanban inline icons */
+.crm-ghl-inline-icon {
+  display: inline;
+  margin-left: 4px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.crm-ghl-inline-icon--synced {
+  color: #16a34a;
+}
+
+.crm-ghl-inline-icon--error {
+  color: #dc2626;
+}
+
+/* Popup GHL sync section */
+.crm-popup-ghl-sync {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f9fafb;
+  border: 1px solid #f0f0f2;
+}
+
+.crm-ghl-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.crm-ghl-status--synced {
+  color: #16a34a;
+}
+
+.crm-ghl-status--pending {
+  color: #d97706;
+}
+
+.crm-ghl-status--error {
+  color: #dc2626;
+}
+
+.crm-ghl-status--local {
+  color: #6b7280;
+}
+
+.crm-ghl-error-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.crm-ghl-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--bg-white);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #2563eb;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+}
+
+.crm-ghl-retry-btn:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
 }

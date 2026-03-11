@@ -5,6 +5,9 @@ import { supabase } from '../services/storage.js';
 import * as fireflies from '../services/integrations/fireflies.js';
 import * as stripeInt from '../services/integrations/stripe-int.js';
 import * as whop from '../services/integrations/whop.js';
+import * as shopify from '../services/integrations/shopify.js';
+import * as kajabi from '../services/integrations/kajabi.js';
+import * as gohighlevel from '../services/integrations/gohighlevel.js';
 
 const router = Router();
 
@@ -114,6 +117,114 @@ router.post('/api/webhooks/whop/:userId', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.log(`[webhook/whop] Error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Shopify webhook ───
+router.post('/api/webhooks/shopify/:userId', async (req, res) => {
+  const { userId } = req.params;
+
+  const { data: integration } = await supabase
+    .from('integrations')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('provider', 'shopify')
+    .eq('is_active', true)
+    .single();
+
+  if (!integration) return res.status(404).json({ error: 'Integration not found' });
+
+  // Verify HMAC-SHA256 signature
+  const signature = req.headers['x-shopify-hmac-sha256'];
+  if (integration.webhook_secret && signature) {
+    const expected = crypto
+      .createHmac('sha256', integration.webhook_secret)
+      .update(typeof req.body === 'string' ? req.body : JSON.stringify(req.body))
+      .digest('base64');
+    if (signature !== expected) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+  }
+
+  try {
+    const topic = req.headers['x-shopify-topic'];
+    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    payload.topic = topic;
+    await shopify.handleWebhook(payload, { ...integration, user_id: userId });
+    res.json({ ok: true });
+  } catch (err) {
+    console.log(`[webhook/shopify] Error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Kajabi webhook ───
+router.post('/api/webhooks/kajabi/:userId', async (req, res) => {
+  const { userId } = req.params;
+
+  const { data: integration } = await supabase
+    .from('integrations')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('provider', 'kajabi')
+    .eq('is_active', true)
+    .single();
+
+  if (!integration) return res.status(404).json({ error: 'Integration not found' });
+
+  // Verify HMAC signature
+  const signature = req.headers['x-kajabi-signature'] || req.headers['x-webhook-signature'];
+  if (integration.webhook_secret && signature) {
+    const expected = crypto
+      .createHmac('sha256', integration.webhook_secret)
+      .update(JSON.stringify(req.body))
+      .digest('hex');
+    if (signature !== expected) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+  }
+
+  try {
+    await kajabi.handleWebhook(req.body, { ...integration, user_id: userId });
+    res.json({ ok: true });
+  } catch (err) {
+    console.log(`[webhook/kajabi] Error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GoHighLevel webhook ───
+router.post('/api/webhooks/gohighlevel/:userId', async (req, res) => {
+  const { userId } = req.params;
+
+  const { data: integration } = await supabase
+    .from('integrations')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('provider', 'gohighlevel')
+    .eq('is_active', true)
+    .single();
+
+  if (!integration) return res.status(404).json({ error: 'Integration not found' });
+
+  // Verify HMAC signature if configured
+  const signature = req.headers['x-ghl-signature'] || req.headers['x-webhook-signature'];
+  if (integration.webhook_secret && signature) {
+    const expected = crypto
+      .createHmac('sha256', integration.webhook_secret)
+      .update(JSON.stringify(req.body))
+      .digest('hex');
+    if (signature !== expected) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+  }
+
+  try {
+    await gohighlevel.handleWebhook(req.body, { ...integration, user_id: userId });
+    res.json({ ok: true });
+  } catch (err) {
+    console.log(`[webhook/gohighlevel] Error: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });

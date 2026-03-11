@@ -14,6 +14,8 @@ const NOTE_TAKERS = [
   { id: 'fathom', name: 'Fathom', logo: '/fathom-logo.png' },
   { id: 'stripe', name: 'Stripe', logo: '/stripe-logo.png' },
   { id: 'whop', name: 'Whop', logo: '/whop-logo.svg' },
+  { id: 'shopify', name: 'Shopify', logo: '/shopify-logo.png' },
+  { id: 'kajabi', name: 'Kajabi', logo: '/kajabi-logo.png' },
   { id: 'gohighlevel', name: 'GoHighLevel', logo: '/gohighlevel-logo.png' },
   { id: 'email', name: 'Email (SMTP/IMAP)', logo: '/smtp-logo.png', large: true },
 ];
@@ -35,10 +37,17 @@ export default function Settings() {
   const [modalOpen, setModalOpen] = useState(null);
   const [apiKey, setApiKey] = useState('');
   const [firefliesStep, setFirefliesStep] = useState(1);
+  const [ghlStep, setGhlStep] = useState(1);
   const [copiedField, setCopiedField] = useState(null);
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState(null);
   const [firefliesWebhook, setFirefliesWebhook] = useState({ url: '', secret: '' });
+  const [ghlWebhook, setGhlWebhook] = useState({ url: '', secret: '' });
+  const [shopifyStoreUrl, setShopifyStoreUrl] = useState('');
+  const [shopifyStep, setShopifyStep] = useState(1);
+  const [shopifyWebhook, setShopifyWebhook] = useState({ url: '', secret: '' });
+  const [kajabiStep, setKajabiStep] = useState(1);
+  const [kajabiWebhook, setKajabiWebhook] = useState({ url: '', secret: '' });
   const [emailForm, setEmailForm] = useState({ email: '', senderName: '', username: '', password: '', imapHost: '', imapPort: '993', smtpHost: '', smtpPort: '587' });
 
   // Brand DNA
@@ -164,10 +173,16 @@ export default function Settings() {
   const openModal = (id) => {
     setApiKey('');
     setFirefliesStep(1);
+    setGhlStep(1);
+    setShopifyStep(1);
+    setKajabiStep(1);
+    setShopifyStoreUrl('');
     setCopiedField(null);
     setConnectError(null);
     setConnecting(false);
     setFirefliesWebhook({ url: '', secret: '' });
+    setShopifyWebhook({ url: '', secret: '' });
+    setKajabiWebhook({ url: '', secret: '' });
     setEmailForm({ email: '', senderName: '', username: '', password: '', imapHost: '', imapPort: '993', smtpHost: '', smtpPort: '587' });
     setModalOpen(id);
   };
@@ -214,6 +229,63 @@ export default function Settings() {
         secret: result.integration.webhook_secret || '',
       });
       setFirefliesStep(2);
+    } catch (err) {
+      setConnectError(err.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleGHLNext = async () => {
+    if (!apiKey.trim()) return;
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const result = await connectIntegration('gohighlevel', apiKey);
+      setIntegrations((prev) => ({ ...prev, gohighlevel: result.integration }));
+      setGhlWebhook({
+        url: result.integration.webhook_url || '',
+        secret: result.integration.webhook_secret || '',
+      });
+      setGhlStep(2);
+    } catch (err) {
+      setConnectError(err.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleShopifyNext = async () => {
+    if (!apiKey.trim() || !shopifyStoreUrl.trim()) return;
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const result = await connectIntegration('shopify', apiKey, { store_url: shopifyStoreUrl });
+      setIntegrations((prev) => ({ ...prev, shopify: result.integration }));
+      setShopifyWebhook({
+        url: result.integration.webhook_url || '',
+        secret: result.integration.webhook_secret || '',
+      });
+      setShopifyStep(2);
+    } catch (err) {
+      setConnectError(err.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleKajabiNext = async () => {
+    if (!apiKey.trim()) return;
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const result = await connectIntegration('kajabi', apiKey);
+      setIntegrations((prev) => ({ ...prev, kajabi: result.integration }));
+      setKajabiWebhook({
+        url: result.integration.webhook_url || '',
+        secret: result.integration.webhook_secret || '',
+      });
+      setKajabiStep(2);
     } catch (err) {
       setConnectError(err.message);
     } finally {
@@ -784,8 +856,18 @@ export default function Settings() {
                 <p className="modal-description">
                   Connect your Stripe account to automatically sync your payment and subscription data to the PuerlyPersonal AI CEO.
                 </p>
+                <div className="modal-connect-instructions">
+                  <details open>
+                    <summary className="modal-connect-summary">How to get your Stripe API key</summary>
+                    <ol className="modal-connect-steps">
+                      <li>Go to <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener noreferrer">Stripe Dashboard &gt; API Keys</a></li>
+                      <li>Copy your <strong>Secret key</strong> (starts with <code>sk_live_</code>)</li>
+                      <li>For testing, you can use the test key (<code>sk_test_</code>) instead</li>
+                    </ol>
+                  </details>
+                </div>
                 <div className="modal-field">
-                  <label className="modal-label">Enter your Stripe API key</label>
+                  <label className="modal-label">Stripe Secret Key</label>
                   <input
                     type="text"
                     className="modal-input"
@@ -811,8 +893,18 @@ export default function Settings() {
                 <p className="modal-description">
                   Connect your Whop account to automatically sync your storefront and membership data to the PuerlyPersonal AI CEO.
                 </p>
+                <div className="modal-connect-instructions">
+                  <details open>
+                    <summary className="modal-connect-summary">How to get your Whop API key</summary>
+                    <ol className="modal-connect-steps">
+                      <li>Go to <a href="https://dash.whop.com/settings/developer" target="_blank" rel="noopener noreferrer">Whop Dashboard &gt; Settings &gt; Developer</a></li>
+                      <li>Under <strong>API Keys</strong>, click "Create API Key"</li>
+                      <li>Copy the generated key and paste it below</li>
+                    </ol>
+                  </details>
+                </div>
                 <div className="modal-field">
-                  <label className="modal-label">Enter your Whop API key</label>
+                  <label className="modal-label">Whop API Key</label>
                   <input
                     type="text"
                     className="modal-input"
@@ -831,10 +923,11 @@ export default function Settings() {
                 </button>
               </>
             )}
-            {modalOpen === 'gohighlevel' && (
+            {/* GoHighLevel: step 1 */}
+            {modalOpen === 'gohighlevel' && ghlStep === 1 && (
               <>
                 <p className="modal-description">
-                  Connect GoHighLevel for automatic CRM syncing and sending emails directly from the PuerlyPersonal AI CEO.
+                  Connect GoHighLevel for automatic bi-directional CRM syncing. New contacts sync both ways between GoHighLevel and your CRM.
                 </p>
                 <div className="modal-field">
                   <label className="modal-label">Enter your GoHighLevel API key</label>
@@ -850,9 +943,244 @@ export default function Settings() {
                 <button
                   className="modal-btn modal-btn--primary"
                   disabled={!apiKey.trim() || connecting}
-                  onClick={handleConnect}
+                  onClick={handleGHLNext}
                 >
-                  {connecting ? <><Loader size={14} className="settings-spinner" /> Connecting...</> : 'Connect'}
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Validating...</> : 'Next'}
+                </button>
+              </>
+            )}
+
+            {/* GoHighLevel: step 2 */}
+            {modalOpen === 'gohighlevel' && ghlStep === 2 && (
+              <>
+                <p className="modal-instruction">Copy this into your GoHighLevel Settings &rarr; Webhooks</p>
+                <div className="modal-field">
+                  <label className="modal-label">Webhook URL</label>
+                  <div className="modal-copy-row">
+                    <input
+                      type="text"
+                      className="modal-input modal-input--readonly"
+                      value={ghlWebhook.url}
+                      readOnly
+                    />
+                    <button
+                      className="modal-copy-btn"
+                      onClick={() => copyToClipboard(ghlWebhook.url, 'ghl-url')}
+                    >
+                      {copiedField === 'ghl-url' ? <Check size={16} /> : <Copy size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <div className="modal-field">
+                  <label className="modal-label">Webhook Secret</label>
+                  <div className="modal-copy-row">
+                    <input
+                      type="text"
+                      className="modal-input modal-input--readonly"
+                      value={ghlWebhook.secret}
+                      readOnly
+                    />
+                    <button
+                      className="modal-copy-btn"
+                      onClick={() => copyToClipboard(ghlWebhook.secret, 'ghl-secret')}
+                    >
+                      {copiedField === 'ghl-secret' ? <Check size={16} /> : <Copy size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <p className="modal-description" style={{ fontSize: 12, marginTop: 4 }}>
+                  Subscribe to <strong>ContactCreate</strong>, <strong>ContactUpdate</strong>, and <strong>ContactDelete</strong> events for real-time sync.
+                </p>
+                <button
+                  className="modal-btn modal-btn--primary"
+                  onClick={() => setModalOpen(null)}
+                >
+                  Done
+                </button>
+              </>
+            )}
+
+            {/* Shopify: step 1 */}
+            {modalOpen === 'shopify' && shopifyStep === 1 && (
+              <>
+                <p className="modal-description">
+                  Connect your Shopify store to sync orders, products, and customer data for sales analytics.
+                </p>
+                <div className="modal-connect-instructions">
+                  <details open>
+                    <summary className="modal-connect-summary">How to get your Shopify access token</summary>
+                    <ol className="modal-connect-steps">
+                      <li>Go to your Shopify Admin &gt; <strong>Settings</strong> &gt; <strong>Apps and sales channels</strong></li>
+                      <li>Click <strong>Develop apps</strong> &gt; <strong>Create an app</strong></li>
+                      <li>Under <strong>Admin API access scopes</strong>, enable: <code>read_orders</code>, <code>read_products</code>, <code>read_customers</code></li>
+                      <li>Click <strong>Install app</strong> and copy the <strong>Admin API access token</strong></li>
+                    </ol>
+                  </details>
+                </div>
+                <div className="modal-field">
+                  <label className="modal-label">Store URL</label>
+                  <input
+                    type="text"
+                    className="modal-input"
+                    placeholder="mystore.myshopify.com"
+                    value={shopifyStoreUrl}
+                    onChange={(e) => setShopifyStoreUrl(e.target.value)}
+                  />
+                </div>
+                <div className="modal-field">
+                  <label className="modal-label">Admin API Access Token</label>
+                  <input
+                    type="text"
+                    className="modal-input"
+                    placeholder="shpat_xxxxxxxxxxxxx"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                  />
+                </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
+                <button
+                  className="modal-btn modal-btn--primary"
+                  disabled={!apiKey.trim() || !shopifyStoreUrl.trim() || connecting}
+                  onClick={handleShopifyNext}
+                >
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Validating...</> : 'Next'}
+                </button>
+              </>
+            )}
+
+            {/* Shopify: step 2 — webhook setup */}
+            {modalOpen === 'shopify' && shopifyStep === 2 && (
+              <>
+                <p className="modal-instruction">Copy this webhook URL into your Shopify Admin &rarr; Settings &rarr; Notifications &rarr; Webhooks</p>
+                <div className="modal-field">
+                  <label className="modal-label">Webhook URL</label>
+                  <div className="modal-copy-row">
+                    <input
+                      type="text"
+                      className="modal-input modal-input--readonly"
+                      value={shopifyWebhook.url}
+                      readOnly
+                    />
+                    <button
+                      className="modal-copy-btn"
+                      onClick={() => copyToClipboard(shopifyWebhook.url, 'shopify-url')}
+                    >
+                      {copiedField === 'shopify-url' ? <Check size={16} /> : <Copy size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <div className="modal-field">
+                  <label className="modal-label">Webhook Secret</label>
+                  <div className="modal-copy-row">
+                    <input
+                      type="text"
+                      className="modal-input modal-input--readonly"
+                      value={shopifyWebhook.secret}
+                      readOnly
+                    />
+                    <button
+                      className="modal-copy-btn"
+                      onClick={() => copyToClipboard(shopifyWebhook.secret, 'shopify-secret')}
+                    >
+                      {copiedField === 'shopify-secret' ? <Check size={16} /> : <Copy size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <p className="modal-description" style={{ fontSize: 12, marginTop: 4 }}>
+                  Subscribe to <strong>Order payment</strong> and <strong>Product creation/update</strong> events for real-time sync.
+                </p>
+                <button
+                  className="modal-btn modal-btn--primary"
+                  onClick={() => setModalOpen(null)}
+                >
+                  Done
+                </button>
+              </>
+            )}
+
+            {/* Kajabi: step 1 */}
+            {modalOpen === 'kajabi' && kajabiStep === 1 && (
+              <>
+                <p className="modal-description">
+                  Connect your Kajabi account to sync offers, sales, subscriptions, and member data for analytics.
+                </p>
+                <div className="modal-connect-instructions">
+                  <details open>
+                    <summary className="modal-connect-summary">How to get your Kajabi API key</summary>
+                    <ol className="modal-connect-steps">
+                      <li>Go to your Kajabi admin &gt; <strong>Settings</strong></li>
+                      <li>Navigate to <strong>API</strong> or <strong>Integrations</strong> section</li>
+                      <li>Generate or copy your API key</li>
+                    </ol>
+                  </details>
+                </div>
+                <div className="modal-field">
+                  <label className="modal-label">Kajabi API Key</label>
+                  <input
+                    type="text"
+                    className="modal-input"
+                    placeholder="Paste your API key here"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                  />
+                </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
+                <button
+                  className="modal-btn modal-btn--primary"
+                  disabled={!apiKey.trim() || connecting}
+                  onClick={handleKajabiNext}
+                >
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Validating...</> : 'Next'}
+                </button>
+              </>
+            )}
+
+            {/* Kajabi: step 2 — webhook setup */}
+            {modalOpen === 'kajabi' && kajabiStep === 2 && (
+              <>
+                <p className="modal-instruction">Copy this webhook URL into your Kajabi &rarr; Settings &rarr; Webhooks</p>
+                <div className="modal-field">
+                  <label className="modal-label">Webhook URL</label>
+                  <div className="modal-copy-row">
+                    <input
+                      type="text"
+                      className="modal-input modal-input--readonly"
+                      value={kajabiWebhook.url}
+                      readOnly
+                    />
+                    <button
+                      className="modal-copy-btn"
+                      onClick={() => copyToClipboard(kajabiWebhook.url, 'kajabi-url')}
+                    >
+                      {copiedField === 'kajabi-url' ? <Check size={16} /> : <Copy size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <div className="modal-field">
+                  <label className="modal-label">Webhook Secret</label>
+                  <div className="modal-copy-row">
+                    <input
+                      type="text"
+                      className="modal-input modal-input--readonly"
+                      value={kajabiWebhook.secret}
+                      readOnly
+                    />
+                    <button
+                      className="modal-copy-btn"
+                      onClick={() => copyToClipboard(kajabiWebhook.secret, 'kajabi-secret')}
+                    >
+                      {copiedField === 'kajabi-secret' ? <Check size={16} /> : <Copy size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <p className="modal-description" style={{ fontSize: 12, marginTop: 4 }}>
+                  Subscribe to <strong>purchase.completed</strong> and <strong>subscription.activated</strong> events for real-time sales updates.
+                </p>
+                <button
+                  className="modal-btn modal-btn--primary"
+                  onClick={() => setModalOpen(null)}
+                >
+                  Done
                 </button>
               </>
             )}
@@ -863,6 +1191,26 @@ export default function Settings() {
                 <p className="modal-description">
                   Connect your email account via SMTP/IMAP to send and receive emails directly from the PuerlyPersonal AI CEO.
                 </p>
+
+                <div className="modal-connect-instructions">
+                  <details>
+                    <summary className="modal-connect-summary">Gmail setup instructions</summary>
+                    <ol className="modal-connect-steps">
+                      <li>Enable 2-Step Verification in your <a href="https://myaccount.google.com/security" target="_blank" rel="noopener noreferrer">Google Account Security</a></li>
+                      <li>Go to <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer">App Passwords</a> and generate a new app password</li>
+                      <li>Use <strong>imap.gmail.com</strong> (port 993) and <strong>smtp.gmail.com</strong> (port 587)</li>
+                    </ol>
+                  </details>
+                  <details>
+                    <summary className="modal-connect-summary">Outlook setup instructions</summary>
+                    <ol className="modal-connect-steps">
+                      <li>Go to <a href="https://account.microsoft.com/security" target="_blank" rel="noopener noreferrer">Microsoft Account Security</a></li>
+                      <li>Enable Two-step verification, then create an app password</li>
+                      <li>Use <strong>outlook.office365.com</strong> (port 993) and <strong>smtp-mail.outlook.com</strong> (port 587)</li>
+                    </ol>
+                  </details>
+                </div>
+
                 <div className="modal-field">
                   <label className="modal-label">Email address</label>
                   <input type="email" className="modal-input" placeholder="you@example.com" value={emailForm.email} onChange={(e) => setEmailForm(f => ({ ...f, email: e.target.value }))} />

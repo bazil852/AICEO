@@ -1,0 +1,77 @@
+.recording-player {
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.recording-player-empty {
+  background: #f9fafb;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 30px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.recording-video {
+  width: 100%;
+  max-height: 360px;
+  display: block;
+  background: #000;
+}
+
+.recording-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.recording-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+.recording-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.recording-speed {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 32px;
+  justify-content: center;
+}
+
+.recording-time {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  min-width: 90px;
+}
+
+.recording-progress {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  cursor: pointer;
+  position: relative;
+}
+.recording-progress:hover {
+  height: 6px;
+}
+
+.recording-progress-bar {
+  height: 100%;
+  background: var(--brand-red);
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}

@@ -308,6 +308,19 @@ export async function syncContacts() {
   return res.json();
 }
 
+export async function syncContactToGHL(contactId) {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_URL}/api/contacts/${contactId}/sync-ghl`, {
+    method: 'POST',
+    headers,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'GHL sync failed' }));
+    throw new Error(err.error);
+  }
+  return res.json();
+}
+
 // ─── Products ───
 
 export async function getProducts() {
@@ -380,12 +393,12 @@ export async function getIntegrations() {
   return res.json();
 }
 
-export async function connectIntegration(provider, apiKey) {
+export async function connectIntegration(provider, apiKey, metadata) {
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_URL}/api/integrations/${provider}/connect`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ api_key: apiKey }),
+    body: JSON.stringify({ api_key: apiKey, metadata }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Connection failed' }));

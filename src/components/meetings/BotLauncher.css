@@ -1,0 +1,119 @@
+.bot-launcher-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.bot-launcher {
+  background: var(--bg-white);
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 480px;
+  margin: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.bot-launcher-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  color: var(--text-primary);
+}
+.bot-launcher-header h3 {
+  flex: 1;
+  margin: 0;
+  font-size: 17px;
+}
+
+.bot-launcher-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: background 0.12s, color 0.12s;
+}
+.bot-launcher-close:hover {
+  background: #f0f0f2;
+  color: var(--text-primary);
+}
+
+.bot-launcher-field {
+  margin-bottom: 14px;
+  flex: 1;
+}
+.bot-launcher-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.bot-launcher-field input,
+.bot-launcher-field select {
+  width: 100%;
+  background: var(--bg-white);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.bot-launcher-field input:focus,
+.bot-launcher-field select:focus {
+  border-color: var(--brand-red);
+}
+
+.bot-launcher-row {
+  display: flex;
+  gap: 12px;
+}
+
+.bot-launcher-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #dc2626;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.bot-launcher-submit {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--brand-red);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.bot-launcher-submit:hover:not(:disabled) {
+  background: var(--brand-red-hover);
+}
+.bot-launcher-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

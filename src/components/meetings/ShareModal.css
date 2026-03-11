@@ -1,0 +1,122 @@
+.share-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.share-modal {
+  background: var(--bg-white);
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 440px;
+  margin: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.share-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+}
+.share-header h3 { flex: 1; margin: 0; font-size: 17px; }
+
+.share-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: background 0.12s, color 0.12s;
+}
+.share-close:hover {
+  background: #f0f0f2;
+  color: var(--text-primary);
+}
+
+.share-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+.share-link-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.share-link-input {
+  flex: 1;
+  background: #f9fafb;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.share-copy-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--brand-red);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.share-copy-btn:hover {
+  background: var(--brand-red-hover);
+}
+
+.share-generate {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--brand-red);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.share-generate:hover {
+  background: var(--brand-red-hover);
+}
+
+.share-revoke {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: #dc2626;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.share-revoke:hover { text-decoration: underline; }

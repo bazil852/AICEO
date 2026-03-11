@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Send, Image, FileText, Link2, ChevronRight, ChevronLeft, X, Plus, History, Loader, CircleStop } from 'lucide-react';
+import { Send, Image, FileText, Link2, ChevronRight, ChevronLeft, X, Plus, History, Loader, CircleStop, Download } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { uploadContextFiles, extractSocialUrls, getContentItems, deleteContentItem, getIntegrationContext, generateImage } from '../lib/api';
@@ -124,9 +124,11 @@ function buildSystemPrompt(platform, photos, documents, socialUrls, brandDna, in
 
   prompt += `=== CONTENT QUALITY STANDARDS ===\n`;
   prompt += `When producing final content:\n`;
-  prompt += `- Write the actual caption/script/copy ready to post — not a description of what to post\n`;
+  prompt += `- Write ONLY the caption/script/copy that goes in the post — ready to copy and paste\n`;
   prompt += `- Captions: strong first line (the hook), short paragraphs, natural voice\n`;
-  prompt += `- For carousels: write the actual text for each slide, not "Slide 1 could be about..."\n`;
+  prompt += `- DO NOT describe what the slides/images contain in your text. Just write the caption. The images speak for themselves.\n`;
+  prompt += `- DO NOT write "Slide 1:", "Slide 2:", etc. in your text output. That content goes INTO the images via generate_image calls.\n`;
+  prompt += `- Your text output = the caption the user posts. Your generate_image calls = the visuals. Keep them separate.\n`;
   prompt += `- No filler, no fluff, no "Let me know what you think!" unless it fits naturally\n`;
   prompt += `- MAX 3-5 hashtags, placed at the end, relevant ones only\n\n`;
 
@@ -142,6 +144,8 @@ function buildSystemPrompt(platform, photos, documents, socialUrls, brandDna, in
     prompt += `- YOUTUBE: Image MUST be LANDSCAPE (16:9). Thumbnail style — dramatic, high contrast, 3-4 words max in huge bold text.\n`;
   } else if (platform.id === 'tiktok') {
     prompt += `- TIKTOK: Image MUST be PORTRAIT (9:16). Bold centered text overlay, eye-catching at small size.\n`;
+  } else if (platform.id === 'linkedin') {
+    prompt += `- LINKEDIN: Image MUST be 4:3 LANDSCAPE ratio. Professional, clean design with authority. Bold headline text, minimal layout.\n`;
   }
   prompt += `- Always specify exact colors (e.g. "black background with white text and red accent")\n`;
   prompt += `- The text on the image should be the HOOK or KEY MESSAGE — not decorative\n\n`;
@@ -150,7 +154,7 @@ function buildSystemPrompt(platform, photos, documents, socialUrls, brandDna, in
   prompt += (PLATFORM_GUIDANCE[platform.id] || `Tailor all content for ${platform.name}.`) + '\n\n';
 
   if (brandDna) {
-    prompt += `=== BRAND DNA ===\n`;
+    prompt += `=== BRAND DNA (MUST USE) ===\n`;
     if (brandDna.description) prompt += `Description: ${brandDna.description}\n`;
     if (brandDna.main_font) prompt += `Main Font: ${brandDna.main_font}\n`;
     if (brandDna.secondary_font) prompt += `Secondary Font: ${brandDna.secondary_font}\n`;
@@ -160,7 +164,8 @@ function buildSystemPrompt(platform, photos, documents, socialUrls, brandDna, in
       if (c.text) prompt += `Text Color: ${c.text}\n`;
       if (c.secondary) prompt += `Secondary Color: ${c.secondary}\n`;
     }
-    if (brandDna.photo_urls?.length) prompt += `Brand Photos: ${brandDna.photo_urls.length} photos available\n`;
+    if (brandDna.photo_urls?.length) prompt += `Brand Photos: ${brandDna.photo_urls.length} reference photo(s) of the user are attached to image generation\n`;
+    if (brandDna.logo_url) prompt += `Logo: The user's brand logo is attached to image generation\n`;
     if (brandDna.documents && Object.keys(brandDna.documents).length) {
       for (const [key, doc] of Object.entries(brandDna.documents)) {
         if (doc.extracted_text) {
@@ -169,7 +174,7 @@ function buildSystemPrompt(platform, photos, documents, socialUrls, brandDna, in
         }
       }
     }
-    prompt += `\nUse this Brand DNA to maintain consistent voice and messaging across all content.\n\n`;
+    prompt += `\nCRITICAL: Every generate_image call MUST incorporate the user's brand identity. In your image prompts, explicitly instruct: "Use the brand colors [${brandDna.colors?.primary || ''}, ${brandDna.colors?.secondary || ''}], incorporate the brand logo from the reference images, and use ${brandDna.main_font || 'the brand font'} typography." If the content features a person, instruct: "Use the person's face and likeness from the attached reference photos."\n\n`;
   }
 
   let hasContext = false;
@@ -395,6 +400,13 @@ export default function Content() {
   const photoInputRef = useRef(null);
   const docInputRef = useRef(null);
   const socialZoneRef = useRef(null);
+
+  const contentStarters = [
+    `Create a carousel post for ${platforms.find(p => p.id === selectedPlatform)?.name || 'Instagram'} about my expertise`,
+    'Write a hook-first caption that stops the scroll',
+    'Repurpose my last video into multiple posts',
+    'Generate a content calendar for this week',
+  ];
 
   const activeIndex = platforms.findIndex((p) => p.id === selectedPlatform);
   const activePlatform = platforms[activeIndex];
@@ -1220,45 +1232,65 @@ export default function Content() {
           )}
 
           {/* Brand DNA */}
-          <div className="cs-branddna">
-            <div className="cs-branddna-top">
-              {brandDna?.logo_url ? (
-                <img src={brandDna.logo_url} alt="Logo" className="cs-branddna-logo" crossOrigin="anonymous" onError={(e) => { e.target.src = '/favicon.png'; }} />
-              ) : (
-                <img src="/favicon.png" alt="Brand DNA" className="cs-branddna-logo" />
-              )}
-              <span className="cs-branddna-title">Brand DNA</span>
-            </div>
-            {sidebarOpen && brandDna?.photo_urls?.length > 0 && (
-              <div className="cs-branddna-photos">
-                {brandDna.photo_urls.slice(0, 4).map((url, i) => (
-                  <img key={i} src={url} alt="" className="cs-branddna-photo" crossOrigin="anonymous" onError={(e) => { e.target.style.display = 'none'; }} />
-                ))}
-                {brandDna.photo_urls.length > 4 && (
-                  <span className="cs-branddna-photo-more">+{brandDna.photo_urls.length - 4}</span>
+          {sidebarOpen ? (
+            <div className="cs-branddna">
+              <div className="cs-branddna-top">
+                {brandDna?.logo_url ? (
+                  <img src={brandDna.logo_url} alt="Logo" className="cs-branddna-logo" crossOrigin="anonymous" onError={(e) => { e.target.src = '/favicon.png'; }} />
+                ) : (
+                  <img src="/favicon.png" alt="Brand DNA" className="cs-branddna-logo" />
                 )}
+                <span className="cs-branddna-title">Brand DNA</span>
               </div>
-            )}
-            {sidebarOpen && brandDna?.colors && Object.values(brandDna.colors).some(Boolean) && (
-              <div className="cs-branddna-colors">
-                {brandDna.colors.primary && <div className="cs-branddna-swatch" style={{ background: brandDna.colors.primary }} />}
-                {brandDna.colors.text && <div className="cs-branddna-swatch" style={{ background: brandDna.colors.text }} />}
-                {brandDna.colors.secondary && <div className="cs-branddna-swatch" style={{ background: brandDna.colors.secondary }} />}
-              </div>
-            )}
-            {sidebarOpen && (brandDna?.main_font || brandDna?.secondary_font) && (
-              <div className="cs-branddna-fonts">
-                {brandDna.main_font && <span className="cs-branddna-font">{brandDna.main_font}</span>}
-                {brandDna.secondary_font && <span className="cs-branddna-font cs-branddna-font--secondary">{brandDna.secondary_font}</span>}
-              </div>
-            )}
-            <p className="cs-branddna-desc">
-              {brandDna ? '' : 'Set up your brand identity.'}
-            </p>
-            <button className="cs-branddna-btn" onClick={(e) => { e.stopPropagation(); navigate('/settings', { state: { scrollTo: 'brand-dna' } }); }}>
-              {brandDna ? 'Edit Brand DNA' : 'Set Up Brand DNA'}
+              {brandDna?.photo_urls?.length > 0 && (
+                <div className="cs-branddna-photos">
+                  {brandDna.photo_urls.slice(0, 4).map((url, i) => (
+                    <img key={i} src={url} alt="" className="cs-branddna-photo" crossOrigin="anonymous" onError={(e) => { e.target.style.display = 'none'; }} />
+                  ))}
+                  {brandDna.photo_urls.length > 4 && (
+                    <span className="cs-branddna-photo-more">+{brandDna.photo_urls.length - 4}</span>
+                  )}
+                </div>
+              )}
+              {brandDna?.colors && Object.values(brandDna.colors).some(Boolean) && (
+                <div className="cs-branddna-colors">
+                  {brandDna.colors.primary && <div className="cs-branddna-swatch" style={{ background: brandDna.colors.primary }} />}
+                  {brandDna.colors.text && <div className="cs-branddna-swatch" style={{ background: brandDna.colors.text }} />}
+                  {brandDna.colors.secondary && <div className="cs-branddna-swatch" style={{ background: brandDna.colors.secondary }} />}
+                </div>
+              )}
+              {(brandDna?.main_font || brandDna?.secondary_font) && (
+                <div className="cs-branddna-fonts">
+                  {brandDna.main_font && <span className="cs-branddna-font">{brandDna.main_font}</span>}
+                  {brandDna.secondary_font && <span className="cs-branddna-font cs-branddna-font--secondary">{brandDna.secondary_font}</span>}
+                </div>
+              )}
+              <p className="cs-branddna-desc">
+                {brandDna ? '' : 'Set up your brand identity.'}
+              </p>
+              <button className="cs-branddna-btn" onClick={(e) => { e.stopPropagation(); navigate('/settings', { state: { scrollTo: 'brand-dna' } }); }}>
+                {brandDna ? 'Edit Brand DNA' : 'Set Up Brand DNA'}
+              </button>
+            </div>
+          ) : (
+            <button
+              className="cs-branddna-collapsed"
+              onClick={(e) => { e.stopPropagation(); navigate('/settings', { state: { scrollTo: 'brand-dna' } }); }}
+              title={brandDna ? 'Edit Brand DNA' : 'Set Up Brand DNA'}
+            >
+              {brandDna?.logo_url ? (
+                <img src={brandDna.logo_url} alt="Logo" className="cs-branddna-collapsed-logo" crossOrigin="anonymous" onError={(e) => { e.target.src = '/favicon.png'; }} />
+              ) : (
+                <img src="/favicon.png" alt="Brand DNA" className="cs-branddna-collapsed-logo" />
+              )}
+              {brandDna?.colors && Object.values(brandDna.colors).some(Boolean) && (
+                <div className="cs-branddna-collapsed-dots">
+                  {brandDna.colors.primary && <span className="cs-branddna-collapsed-dot" style={{ background: brandDna.colors.primary }} />}
+                  {brandDna.colors.secondary && <span className="cs-branddna-collapsed-dot" style={{ background: brandDna.colors.secondary }} />}
+                </div>
+              )}
             </button>
-          </div>
+          )}
         </div>
       </aside>
 
@@ -1389,6 +1421,15 @@ export default function Content() {
               </div>
 
               <p className="content-hero-text">Ask your AI CEO to Plan, Ideate or Generate content.</p>
+
+              <div className="content-starters">
+                {contentStarters.map((s, i) => (
+                  <button key={i} className="content-starter" onClick={() => { setInput(s); }}>
+                    <span>{s}</span>
+                    <ChevronRight size={14} className="content-starter-arrow" />
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="content-messages">
@@ -1402,10 +1443,13 @@ export default function Content() {
                 }
                 if (!msg.content) {
                   return (
-                    <div key={msg.id} className="content-thinking">
-                      <span className="content-thinking-text">
-                        thinking<span className="content-dots"><span>.</span><span>.</span><span>.</span></span>
-                      </span>
+                    <div key={msg.id} className="content-assistant-row">
+                      <img src="/favicon.png" alt="" className="content-assistant-avatar" />
+                      <div className="content-thinking">
+                        <span className="content-thinking-text">
+                          thinking<span className="content-dots"><span>.</span><span>.</span><span>.</span></span>
+                        </span>
+                      </div>
                     </div>
                   );
                 }
@@ -1414,36 +1458,47 @@ export default function Content() {
                 const hasPending = (msg.pendingImages || 0) > 0;
                 const hasImages = sortedImages.length > 0 || hasPending;
                 return (
-                  <div key={msg.id} className="content-bubble content-bubble--assistant">
-                    {/* Image carousel */}
-                    {hasImages && (
-                      <div className="content-image-carousel">
-                        {sortedImages.map((img, i) => (
-                          <div key={i} className="content-carousel-slide content-generated-image--fadein">
-                            <img src={img.src} alt={`Slide ${i + 1}`} />
-                          </div>
-                        ))}
-                        {/* Skeleton placeholders for pending images */}
-                        {Array.from({ length: msg.pendingImages || 0 }).map((_, i) => (
-                          <div key={`pending-${i}`} className="content-carousel-slide content-image-skeleton">
-                            <div className="content-image-skeleton-shimmer" />
-                            <div className="content-image-skeleton-label">
-                              <Loader size={16} className="cs-spinner" />
-                              <span>Generating slide {sortedImages.length + i + 1}...</span>
+                  <div key={msg.id} className="content-assistant-row">
+                    <img src="/favicon.png" alt="" className="content-assistant-avatar" />
+                    <div className="content-bubble content-bubble--assistant">
+                      {parsed.text && (
+                        <div className="content-markdown">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                            table: ({ children, ...props }) => (
+                              <div className="content-table-scroll"><table {...props}>{children}</table></div>
+                            ),
+                          }}>{parsed.text}</ReactMarkdown>
+                        </div>
+                      )}
+                      {/* Image carousel — below text */}
+                      {hasImages && (
+                        <div className="content-image-carousel">
+                          {sortedImages.map((img, i) => (
+                            <div key={i} className="content-carousel-slide content-generated-image--fadein">
+                              <img src={img.src} alt={`Slide ${i + 1}`} />
+                              <a
+                                className="content-carousel-download"
+                                href={img.src}
+                                download={`slide-${i + 1}.png`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Download size={16} />
+                              </a>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {parsed.text && (
-                      <div className="content-markdown">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
-                          table: ({ children, ...props }) => (
-                            <div className="content-table-scroll"><table {...props}>{children}</table></div>
-                          ),
-                        }}>{parsed.text}</ReactMarkdown>
-                      </div>
-                    )}
+                          ))}
+                          {/* Skeleton placeholders for pending images */}
+                          {Array.from({ length: msg.pendingImages || 0 }).map((_, i) => (
+                            <div key={`pending-${i}`} className="content-carousel-slide content-image-skeleton">
+                              <div className="content-image-skeleton-shimmer" />
+                              <div className="content-image-skeleton-label">
+                                <Loader size={16} className="cs-spinner" />
+                                <span>Generating slide {sortedImages.length + i + 1}...</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}

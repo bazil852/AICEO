@@ -23,7 +23,11 @@ export default function BottomBar() {
       }
     };
     document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('touchstart', handleClick, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('touchstart', handleClick);
+    };
   }, []);
 
   return (
@@ -31,14 +35,13 @@ export default function BottomBar() {
       {navItems.map((item) =>
         item.children ? (
           <div key={item.label} className="bottom-bar-dropdown" ref={menuRef}>
-            <div className={`bottom-bar-link ${isContentActive ? 'bottom-bar-link--active' : ''}`}>
-              <div className="bottom-bar-link-main" onClick={() => navigate(item.children[0].to)}>
-                <item.icon size={22} />
-                <span>{item.label}</span>
-              </div>
-              <button className="bottom-bar-link-toggle" onClick={() => setContentOpen(!contentOpen)}>
-                <ChevronUp size={12} className={`bottom-bar-chevron ${contentOpen ? 'bottom-bar-chevron--open' : ''}`} />
-              </button>
+            <div
+              className={`bottom-bar-link ${isContentActive ? 'bottom-bar-link--active' : ''}`}
+              onClick={() => setContentOpen(!contentOpen)}
+            >
+              <item.icon size={22} />
+              <span>{item.label}</span>
+              <ChevronUp size={12} className={`bottom-bar-chevron ${contentOpen ? 'bottom-bar-chevron--open' : ''}`} />
             </div>
             {contentOpen && (
               <div className="bottom-bar-popup">

@@ -919,3 +919,41 @@
     opacity: 1;
   }
 }
+
+/* Connect Instructions */
+.modal-connect-instructions {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modal-connect-summary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 8px 0;
+}
+
+.modal-connect-steps {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.modal-connect-steps a {
+  color: var(--brand-red);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.modal-connect-steps a:hover {
+  text-decoration: underline;
+}
+
+.modal-connect-steps strong {
+  color: var(--text-primary);
+}

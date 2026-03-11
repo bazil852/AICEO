@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Search, Filter, ArrowUpDown, Plus, X, Phone, Mail, Building2, Calendar, Play, Download, ExternalLink, Send, Instagram, Linkedin, Trash2, RefreshCw, Loader2 } from 'lucide-react';
-import { getContacts, createContact, updateContact as updateContactApi, deleteContact as deleteContactApi, getContactDetail, syncContacts } from '../lib/api';
+import { Search, Filter, ArrowUpDown, Plus, X, Phone, Mail, Building2, Calendar, Play, Download, ExternalLink, Send, Instagram, Linkedin, Trash2, RefreshCw, Loader2, CloudOff, AlertCircle, CheckCircle2, Upload, UserPlus } from 'lucide-react';
+import { getContacts, createContact, updateContact as updateContactApi, deleteContact as deleteContactApi, getContactDetail, syncContacts, syncContactToGHL } from '../lib/api';
 import './CRM.css';
 
 function XIcon({ size = 14 }) {
@@ -46,8 +46,10 @@ export default function CRM() {
   const [socialInput, setSocialInput] = useState('');
   const [addingContact, setAddingContact] = useState(false);
   const [newContact, setNewContact] = useState({ name: '', email: '', phone: '', business: '' });
+  const [csvImporting, setCsvImporting] = useState(false);
   const pageRef = useRef(null);
   const saveTimerRef = useRef(null);
+  const csvInputRef = useRef(null);
 
   useEffect(() => {
     loadContacts();
@@ -96,6 +98,48 @@ export default function CRM() {
     } catch (err) {
       console.error('Failed to add contact:', err);
     }
+  };
+
+  const handleCsvImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setCsvImporting(true);
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) { setCsvImporting(false); return; }
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+      const nameIdx = headers.findIndex(h => h === 'name' || h === 'full name' || h === 'contact name');
+      const emailIdx = headers.findIndex(h => h === 'email' || h === 'email address');
+      const phoneIdx = headers.findIndex(h => h === 'phone' || h === 'phone number' || h === 'mobile');
+      const bizIdx = headers.findIndex(h => h === 'business' || h === 'company' || h === 'business name');
+
+      const rows = lines.slice(1).map(line => {
+        const cols = line.match(/(".*?"|[^",]+|(?<=,)(?=,))/g)?.map(c => c.replace(/^"|"$/g, '').trim()) || [];
+        return {
+          name: nameIdx >= 0 ? cols[nameIdx] || '' : '',
+          email: emailIdx >= 0 ? cols[emailIdx] || '' : '',
+          phone: phoneIdx >= 0 ? cols[phoneIdx] || '' : '',
+          business: bizIdx >= 0 ? cols[bizIdx] || '' : '',
+        };
+      }).filter(r => r.name || r.email);
+
+      for (const row of rows) {
+        try {
+          const { contact } = await createContact(row);
+          setContacts(prev => [{
+            ...contact,
+            tags: contact.tags || [],
+            socials: contact.socials || { instagram: [], linkedin: [], x: [] },
+            created: new Date(contact.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          }, ...prev]);
+        } catch { /* skip duplicates */ }
+      }
+    } catch (err) {
+      console.error('CSV import failed:', err);
+    }
+    setCsvImporting(false);
   };
 
   const handleDeleteContact = async (id) => {
@@ -236,10 +280,21 @@ export default function CRM() {
             {list.name}
           </button>
         ))}
-        <button className="crm-list-tab crm-list-tab--create" onClick={() => setAddingContact(true)}>
-          <Plus size={14} />
-          Add Contact
+        <button
+          className="crm-list-tab crm-list-tab--create"
+          onClick={() => csvInputRef.current?.click()}
+          disabled={csvImporting}
+        >
+          {csvImporting ? <Loader2 size={14} className="crm-spin" /> : <Upload size={14} />}
+          {csvImporting ? 'Importing...' : 'Import CSV'}
         </button>
+        <input
+          ref={csvInputRef}
+          type="file"
+          accept=".csv"
+          style={{ display: 'none' }}
+          onChange={handleCsvImport}
+        />
         <button
           className="crm-list-tab crm-list-tab--create"
           onClick={handleSync}
@@ -295,6 +350,10 @@ export default function CRM() {
               Search Contacts
             </button>
           )}
+          <button className="crm-add-contact-btn" onClick={() => setAddingContact(true)}>
+            <UserPlus size={15} />
+            <span className="crm-add-contact-label">Add Contact</span>
+          </button>
         </div>
       </div>
 
@@ -334,7 +393,27 @@ export default function CRM() {
                 const st = STATUS_COLORS[c.status] || { bg: '#f3f4f6', color: '#374151' };
                 return (
                   <tr key={c.id} onClick={(e) => openContact(c, e)} className="crm-row-clickable">
-                    <td className="crm-cell-name">{c.name || '—'}</td>
+                    <td className="crm-cell-name">
+                      <span className="crm-cell-name-text">{c.name || '—'}</span>
+                      {c.ghl_contact_id && (
+                        <span className={`crm-ghl-badge crm-ghl-badge--${c.ghl_sync_status || 'synced'}`} title={
+                          c.ghl_sync_status === 'error' ? `GHL sync error: ${c.ghl_sync_error || 'Unknown'}` :
+                          c.ghl_sync_status === 'pending' ? 'Syncing to GHL...' :
+                          c.ghl_sync_status === 'synced' ? 'Synced with GoHighLevel' : 'GHL'
+                        }>
+                          {c.ghl_sync_status === 'synced' && <CheckCircle2 size={12} />}
+                          {c.ghl_sync_status === 'pending' && <Loader2 size={12} className="crm-spin" />}
+                          {c.ghl_sync_status === 'error' && <AlertCircle size={12} />}
+                          GHL
+                        </span>
+                      )}
+                      {c.source === 'gohighlevel' && !c.ghl_contact_id && (
+                        <span className="crm-ghl-badge crm-ghl-badge--local_only" title="Imported from GHL (local only)">
+                          <CloudOff size={12} />
+                          GHL
+                        </span>
+                      )}
+                    </td>
                     <td>{c.phone || '—'}</td>
                     <td className="crm-cell-email">{c.email || '—'}</td>
                     <td>{c.business || '—'}</td>
@@ -382,7 +461,15 @@ export default function CRM() {
                 <div className="crm-kb-cards">
                   {cards.map((c) => (
                     <div key={c.id} className="crm-kb-card" onClick={(e) => openContact(c, e)}>
-                      <div className="crm-kb-card-name">{c.name || c.email}</div>
+                      <div className="crm-kb-card-name">
+                        {c.name || c.email}
+                        {c.ghl_contact_id && c.ghl_sync_status === 'synced' && (
+                          <CheckCircle2 size={12} className="crm-ghl-inline-icon crm-ghl-inline-icon--synced" />
+                        )}
+                        {c.ghl_contact_id && c.ghl_sync_status === 'error' && (
+                          <AlertCircle size={12} className="crm-ghl-inline-icon crm-ghl-inline-icon--error" />
+                        )}
+                      </div>
                       <div className="crm-kb-card-biz">{c.business || '—'}</div>
                       <div className="crm-kb-card-email">{c.email}</div>
                       <div className="crm-kb-card-footer">
@@ -496,6 +583,80 @@ export default function CRM() {
                   <span key={t} className="crm-tag">{t}</span>
                 ))}
               </div>
+
+              {/* GHL Sync Status */}
+              {(popup.contact.ghl_contact_id || popup.contact.ghl_sync_status === 'error' || popup.contact.ghl_sync_status === 'pending') && (
+                <div className="crm-popup-ghl-sync">
+                  {popup.contact.ghl_sync_status === 'synced' && (
+                    <span className="crm-ghl-status crm-ghl-status--synced">
+                      <CheckCircle2 size={14} />
+                      Synced with GoHighLevel
+                    </span>
+                  )}
+                  {popup.contact.ghl_sync_status === 'pending' && (
+                    <span className="crm-ghl-status crm-ghl-status--pending">
+                      <Loader2 size={14} className="crm-spin" />
+                      Syncing to GoHighLevel...
+                    </span>
+                  )}
+                  {popup.contact.ghl_sync_status === 'error' && (
+                    <div className="crm-ghl-error-row">
+                      <span className="crm-ghl-status crm-ghl-status--error">
+                        <AlertCircle size={14} />
+                        Sync error: {popup.contact.ghl_sync_error || 'Unknown'}
+                      </span>
+                      <button
+                        className="crm-ghl-retry-btn"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          updateLocalContact(popup.contact.id, c => ({ ...c, ghl_sync_status: 'pending', ghl_sync_error: null }));
+                          try {
+                            const { contact: updated } = await syncContactToGHL(popup.contact.id);
+                            if (updated) updateLocalContact(popup.contact.id, () => ({
+                              ...popup.contact,
+                              ...updated,
+                              created: popup.contact.created,
+                            }));
+                          } catch (err) {
+                            updateLocalContact(popup.contact.id, c => ({ ...c, ghl_sync_status: 'error', ghl_sync_error: err.message }));
+                          }
+                        }}
+                      >
+                        <RefreshCw size={12} />
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                  {popup.contact.ghl_sync_status === 'local_only' && (
+                    <div className="crm-ghl-error-row">
+                      <span className="crm-ghl-status crm-ghl-status--local">
+                        <CloudOff size={14} />
+                        Local only (not synced to GHL)
+                      </span>
+                      <button
+                        className="crm-ghl-retry-btn"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          updateLocalContact(popup.contact.id, c => ({ ...c, ghl_sync_status: 'pending' }));
+                          try {
+                            const { contact: updated } = await syncContactToGHL(popup.contact.id);
+                            if (updated) updateLocalContact(popup.contact.id, () => ({
+                              ...popup.contact,
+                              ...updated,
+                              created: popup.contact.created,
+                            }));
+                          } catch (err) {
+                            updateLocalContact(popup.contact.id, c => ({ ...c, ghl_sync_status: 'error', ghl_sync_error: err.message }));
+                          }
+                        }}
+                      >
+                        <RefreshCw size={12} />
+                        Sync to GHL
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Social Media */}
               <div className="crm-popup-socials">

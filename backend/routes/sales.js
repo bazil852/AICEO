@@ -37,7 +37,7 @@ router.get('/api/sales/revenue', async (req, res) => {
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
-      buckets.push({ label: days[d.getDay()], date: d, stripe: 0, whop: 0, platform: 0 });
+      buckets.push({ label: days[d.getDay()], date: d, stripe: 0, whop: 0, shopify: 0, kajabi: 0, platform: 0 });
     }
     dateFormat = (ts) => {
       const d = new Date(ts * 1000 || ts);
@@ -49,7 +49,7 @@ router.get('/api/sales/revenue', async (req, res) => {
     buckets = [];
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      buckets.push({ label: months[d.getMonth()], date: d, stripe: 0, whop: 0, platform: 0 });
+      buckets.push({ label: months[d.getMonth()], date: d, stripe: 0, whop: 0, shopify: 0, kajabi: 0, platform: 0 });
     }
     dateFormat = (ts) => {
       const d = new Date(ts * 1000 || ts);
@@ -60,7 +60,7 @@ router.get('/api/sales/revenue', async (req, res) => {
     buckets = [];
     for (let i = 5; i >= 0; i--) {
       const year = now.getFullYear() - i;
-      buckets.push({ label: String(year), date: new Date(year, 0, 1), stripe: 0, whop: 0, platform: 0 });
+      buckets.push({ label: String(year), date: new Date(year, 0, 1), stripe: 0, whop: 0, shopify: 0, kajabi: 0, platform: 0 });
     }
     dateFormat = (ts) => {
       const d = new Date(ts * 1000 || ts);
@@ -93,6 +93,8 @@ router.get('/api/sales/revenue', async (req, res) => {
     if (bucket) {
       if (p.provider === 'stripe') bucket.stripe += amount;
       else if (p.provider === 'whop') bucket.whop += amount;
+      else if (p.provider === 'shopify') bucket.shopify += amount;
+      else if (p.provider === 'kajabi') bucket.kajabi += amount;
     }
   }
 
@@ -108,6 +110,8 @@ router.get('/api/sales/revenue', async (req, res) => {
     label: b.label,
     stripe: Math.round(b.stripe),
     whop: Math.round(b.whop),
+    shopify: Math.round(b.shopify),
+    kajabi: Math.round(b.kajabi),
     platform: Math.round(b.platform),
   }));
 
@@ -115,6 +119,8 @@ router.get('/api/sales/revenue', async (req, res) => {
   const totals = {
     stripe: Math.round(buckets.reduce((s, b) => s + b.stripe, 0)),
     whop: Math.round(buckets.reduce((s, b) => s + b.whop, 0)),
+    shopify: Math.round(buckets.reduce((s, b) => s + b.shopify, 0)),
+    kajabi: Math.round(buckets.reduce((s, b) => s + b.kajabi, 0)),
     platform: Math.round(buckets.reduce((s, b) => s + b.platform, 0)),
   };
 
@@ -189,6 +195,33 @@ router.get('/api/sales/calls', async (req, res) => {
     status: metadataMap[t.id]?.status || null,
   }));
 
+  // Also include PurelyPersonal meetings
+  const { data: ppMeetings } = await supabase
+    .from('meetings')
+    .select('id, title, platform, started_at, duration_seconds, summary, action_items, recall_bot_status')
+    .eq('user_id', userId)
+    .in('recall_bot_status', ['processed', 'done'])
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (ppMeetings?.length) {
+    for (const m of ppMeetings) {
+      calls.push({
+        id: `pp-${m.id}`,
+        name: m.title || 'Meeting',
+        date: m.started_at || '',
+        summary: m.summary?.overview || '',
+        recorder: 'purelypersonal',
+        callType: 'Other',
+        status: null,
+        platform: m.platform,
+        meetingId: m.id,
+      });
+    }
+    // Re-sort by date descending
+    calls.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  }
+
   res.json({ calls });
 });
 
@@ -220,13 +253,13 @@ router.get('/api/sales/products', async (req, res) => {
   const userId = req.user.id;
   if (userId === 'anonymous') return res.json({ products: [] });
 
-  // Whop products
-  const { data: whopProducts } = await supabase
+  // Integration products (Whop, Shopify, Kajabi)
+  const { data: integrationProducts } = await supabase
     .from('integration_data')
-    .select('id, title, metadata')
+    .select('id, title, provider, metadata')
     .eq('user_id', userId)
-    .eq('provider', 'whop')
-    .eq('data_type', 'product');
+    .eq('data_type', 'product')
+    .in('provider', ['whop', 'shopify', 'kajabi']);
 
   // Get unique product names from manual sales
   const { data: manualProducts } = await supabase
@@ -237,10 +270,10 @@ router.get('/api/sales/products', async (req, res) => {
   const productSet = new Set();
   const products = [{ id: 'all', name: 'All Products' }];
 
-  for (const wp of (whopProducts || [])) {
-    if (!productSet.has(wp.title)) {
-      productSet.add(wp.title);
-      products.push({ id: wp.id, name: wp.title, source: 'whop' });
+  for (const ip of (integrationProducts || [])) {
+    if (!productSet.has(ip.title)) {
+      productSet.add(ip.title);
+      products.push({ id: ip.id, name: ip.title, source: ip.provider });
     }
   }
 
@@ -299,6 +332,8 @@ router.post('/api/sales/sync', async (req, res) => {
       else if (int.provider === 'whop') service = (await import('../services/integrations/whop.js'));
       else if (int.provider === 'fireflies') service = (await import('../services/integrations/fireflies.js'));
       else if (int.provider === 'fathom') service = (await import('../services/integrations/fathom.js'));
+      else if (int.provider === 'shopify') service = (await import('../services/integrations/shopify.js'));
+      else if (int.provider === 'kajabi') service = (await import('../services/integrations/kajabi.js'));
       else continue;
 
       const result = await service.sync({ ...int, user_id: userId });

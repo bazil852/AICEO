@@ -52,9 +52,10 @@ const PLATFORM_IMAGE_RULES = {
 - High contrast, professional look`,
 
   linkedin: `LINKEDIN IMAGE RULES:
-- Aspect ratio: SQUARE 1:1 or slightly landscape
+- Aspect ratio: LANDSCAPE 4:3 — this is critical, the image MUST be 4:3 landscape format
 - Professional, clean design with authority
-- Bold headline text, minimal design, corporate-friendly colors`,
+- Bold headline text, minimal design, corporate-friendly colors
+- Think thought-leader post graphics — clean, sharp, authoritative`,
 
   facebook: `FACEBOOK IMAGE RULES:
 - Aspect ratio: SQUARE 1:1 or LANDSCAPE 16:9
@@ -125,18 +126,39 @@ router.post('/api/generate/image', async (req, res) => {
       if (brand.mainFont) brandContext += `\nBRAND FONT: ${brand.mainFont} (use this typography style)`;
     }
 
-    const imagePrompt = `You are a professional graphic designer creating social media content.
+    // Determine what brand assets are available for stronger prompting
+    const hasLogo = brand?.logoUrl;
+    const hasPhotos = brand?.photoUrls?.length > 0;
+
+    let brandImageInstructions = '';
+    if (hasLogo && hasPhotos) {
+      brandImageInstructions = `
+MANDATORY BRAND ASSET USAGE:
+- The FIRST attached image is the user's BRAND LOGO. You MUST place this logo in the design — typically in a corner or as a watermark. Reproduce the logo exactly as shown.
+- The REMAINING attached images are REFERENCE PHOTOS of the user/founder. If this content features a person, you MUST use their exact face and likeness from these reference photos. Do NOT generate a different person.
+- These brand assets are NON-NEGOTIABLE. Every generated image must include the brand logo and use the person's real appearance.`;
+    } else if (hasLogo) {
+      brandImageInstructions = `
+MANDATORY BRAND ASSET USAGE:
+- The attached image is the user's BRAND LOGO. You MUST incorporate this logo in the design — place it in a corner, header, or as a subtle watermark. Reproduce the logo exactly as shown.`;
+    } else if (hasPhotos) {
+      brandImageInstructions = `
+MANDATORY BRAND ASSET USAGE:
+- The attached images are REFERENCE PHOTOS of the user/founder. If this content features a person, you MUST use their exact face and likeness from these photos. Do NOT generate a different face or body. Match their appearance precisely.`;
+    }
+
+    const imagePrompt = `You are a professional graphic designer creating social media content. You have a reputation for brand-consistent, on-brand designs.
 
 ${platformRules}
 ${brandContext}
+${brandImageInstructions}
 
 GENERAL QUALITY RULES:
-- Photorealistic or modern graphic design ONLY — NO cartoons, NO pixel art, NO illustrations, NO clip-art
+- Photorealistic or modern graphic design ONLY — NO cartoons, NO pixel art, NO illustrations, NO clip-art, NO AI-looking generic imagery
 - Any text on the image must be spelled correctly, large, and perfectly readable
 - Clean composition with clear visual hierarchy
-- Use the brand colors and fonts specified above if provided
-
-REFERENCE IMAGES: The attached images are the user's brand photos and logo. Use the person's likeness/face from the reference photos if relevant to the content. Match the brand's visual identity from the logo.
+- ALWAYS use the brand colors and fonts specified above — these are not suggestions, they are requirements
+- The design should look like it came from a professional studio that knows this brand
 
 NOW GENERATE THIS IMAGE:
 ${prompt}`;

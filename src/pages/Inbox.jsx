@@ -20,9 +20,39 @@ const FOLDERS = [
 ];
 
 const PROVIDER_PRESETS = {
-  gmail: { label: 'Gmail', imap_host: 'imap.gmail.com', imap_port: 993, smtp_host: 'smtp.gmail.com', smtp_port: 465 },
-  outlook: { label: 'Outlook', imap_host: 'outlook.office365.com', imap_port: 993, smtp_host: 'smtp-mail.outlook.com', smtp_port: 587 },
-  imap: { label: 'Custom IMAP/SMTP' },
+  gmail: {
+    label: 'Gmail',
+    imap_host: 'imap.gmail.com', imap_port: 993,
+    smtp_host: 'smtp.gmail.com', smtp_port: 465,
+    icon: (
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none">
+        <path d="M22 6.5V17a2 2 0 01-2 2H4a2 2 0 01-2-2V6.5l10 6.5 10-6.5z" fill="#EA4335" opacity="0.15"/>
+        <path d="M22 6.5l-10 6.5L2 6.5" stroke="#EA4335" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <rect x="2" y="5" width="20" height="14" rx="2" stroke="#EA4335" strokeWidth="1.5"/>
+      </svg>
+    ),
+  },
+  outlook: {
+    label: 'Outlook',
+    imap_host: 'outlook.office365.com', imap_port: 993,
+    smtp_host: 'smtp-mail.outlook.com', smtp_port: 587,
+    icon: (
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none">
+        <path d="M22 6.5V17a2 2 0 01-2 2H4a2 2 0 01-2-2V6.5l10 6.5 10-6.5z" fill="#0078D4" opacity="0.15"/>
+        <path d="M22 6.5l-10 6.5L2 6.5" stroke="#0078D4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <rect x="2" y="5" width="20" height="14" rx="2" stroke="#0078D4" strokeWidth="1.5"/>
+      </svg>
+    ),
+  },
+  imap: {
+    label: 'Custom SMTP',
+    icon: (
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="5" width="20" height="14" rx="2"/>
+        <path d="M22 6.5l-10 6.5L2 6.5"/>
+      </svg>
+    ),
+  },
 };
 
 const AI_DRAFT = `Hi there,
@@ -75,7 +105,7 @@ export default function Inbox() {
   const [syncing, setSyncing] = useState(false);
 
   // Add account modal
-  const [accountForm, setAccountForm] = useState({ provider: 'gmail', email: '', display_name: '', username: '', password: '', imap_host: '', imap_port: 993, smtp_host: '', smtp_port: 587 });
+  const [accountForm, setAccountForm] = useState({ provider: 'gmail', email: '', display_name: '', username: '', password: '', imap_host: '', imap_port: 993, smtp_host: '', smtp_port: 465 });
   const [accountError, setAccountError] = useState('');
   const [accountSaving, setAccountSaving] = useState(false);
 
@@ -220,7 +250,7 @@ export default function Inbox() {
       const accs = await loadAccounts();
       if (accs.length === 1) setComposeAccountId(accs[0].id);
       setAddAccountOpen(false);
-      setAccountForm({ provider: 'gmail', email: '', display_name: '', username: '', password: '', imap_host: '', imap_port: 993, smtp_host: '', smtp_port: 465 });
+      setAccountForm({ provider: 'gmail', email: '', display_name: '', username: '', password: '', imap_host: '', imap_port: 993, smtp_host: '', smtp_port: PROVIDER_PRESETS.gmail.smtp_port });
       if (result.warning) {
         showToast('Account connected — sending may be limited', 'error');
       } else {
@@ -951,17 +981,27 @@ export default function Inbox() {
               <div className="inbox-account-modal-error">{accountError}</div>
             )}
 
-            <div className="modal-field">
-              <label className="modal-label">Provider</label>
-              <select
-                className="modal-input"
-                value={accountForm.provider}
-                onChange={(e) => setAccountForm({ ...accountForm, provider: e.target.value })}
-              >
-                {Object.entries(PROVIDER_PRESETS).map(([key, p]) => (
-                  <option key={key} value={key}>{p.label}</option>
-                ))}
-              </select>
+            <div className="inbox-provider-buttons">
+              {Object.entries(PROVIDER_PRESETS).map(([key, p]) => (
+                <button
+                  key={key}
+                  className={`inbox-provider-btn ${accountForm.provider === key ? 'inbox-provider-btn--active' : ''}`}
+                  onClick={() => {
+                    const preset = PROVIDER_PRESETS[key];
+                    setAccountForm({
+                      ...accountForm,
+                      provider: key,
+                      imap_host: preset.imap_host || '',
+                      imap_port: preset.imap_port || 993,
+                      smtp_host: preset.smtp_host || '',
+                      smtp_port: preset.smtp_port || 587,
+                    });
+                  }}
+                >
+                  {p.icon}
+                  <span>{p.label}</span>
+                </button>
+              ))}
             </div>
 
             <div className="modal-field">
@@ -998,9 +1038,25 @@ export default function Inbox() {
                 onChange={(e) => setAccountForm({ ...accountForm, password: e.target.value })}
               />
               {accountForm.provider === 'gmail' && (
-                <span className="inbox-account-modal-hint">
-                  Use a Google App Password — enable 2FA first, then generate one in your Google Account security settings.
-                </span>
+                <div className="inbox-account-modal-hint">
+                  <strong>How to connect Gmail:</strong>
+                  <ol className="inbox-connect-steps">
+                    <li>Enable 2-Step Verification in your <a href="https://myaccount.google.com/security" target="_blank" rel="noopener noreferrer">Google Account Security</a></li>
+                    <li>Go to <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer">App Passwords</a> and generate a new app password</li>
+                    <li>Paste the generated 16-character password above</li>
+                  </ol>
+                </div>
+              )}
+              {accountForm.provider === 'outlook' && (
+                <div className="inbox-account-modal-hint">
+                  <strong>How to connect Outlook:</strong>
+                  <ol className="inbox-connect-steps">
+                    <li>Go to <a href="https://account.microsoft.com/security" target="_blank" rel="noopener noreferrer">Microsoft Account Security</a></li>
+                    <li>Enable Two-step verification if not already on</li>
+                    <li>Under "App passwords", create a new app password</li>
+                    <li>Paste the generated password above</li>
+                  </ol>
+                </div>
               )}
             </div>
 

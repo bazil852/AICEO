@@ -12,6 +12,9 @@ import Products from './pages/Products';
 import Settings from './pages/Settings';
 import OutlierDetector from './pages/OutlierDetector';
 import CRM from './pages/CRM';
+import Meetings from './pages/Meetings';
+import MeetingDetail from './pages/MeetingDetail';
+import SharedMeeting from './pages/SharedMeeting';
 
 function App() {
   const { user, loading } = useAuth();
@@ -25,11 +28,17 @@ function App() {
   }
 
   if (!user) {
-    return <LoginScreen />;
+    return (
+      <Routes>
+        <Route path="/shared/:token" element={<SharedMeeting />} />
+        <Route path="*" element={<LoginScreen />} />
+      </Routes>
+    );
   }
 
   return (
     <Routes>
+      <Route path="/shared/:token" element={<SharedMeeting />} />
       <Route element={<Layout />}>
         <Route path="/ai-ceo" element={<AiCeo />} />
         <Route path="/dashboard" element={<Dashboard />} />
@@ -40,6 +49,8 @@ function App() {
         <Route path="/sales" element={<Sales />} />
         <Route path="/products" element={<Products />} />
         <Route path="/crm" element={<CRM />} />
+        <Route path="/meetings" element={<Meetings />} />
+        <Route path="/meetings/:id" element={<MeetingDetail />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>

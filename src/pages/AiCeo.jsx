@@ -1,19 +1,48 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Mic, Square, Loader2, CircleStop } from 'lucide-react';
+import { useOutletContext } from 'react-router-dom';
+import { Send, Mic, Square, CircleStop, PanelRightOpen, Eye } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { supabase } from '../lib/supabase';
-import { getContentItems, getIntegrationContext, getSalesStats, getSalesRevenue, getSalesCalls, getProducts, getContacts, getOutlierCreators, getOutlierVideos } from '../lib/api';
+import { getContentItems, getIntegrationContext, getSalesStats, getSalesRevenue, getSalesCalls, getProducts, getContacts, getOutlierCreators, getOutlierVideos, generateImage } from '../lib/api';
+import { ARTIFACT_TYPES } from '../lib/artifacts';
+import ArtifactPanel from '../components/ArtifactPanel';
 import './AiCeo.css';
 
+// ── System Prompt ──
 const BASE_PROMPT = `You are the AI CEO of the user's business, powered by PuerlyPersonal. You have FULL access to their business data — brand identity, content library, sales numbers, products, contacts, call transcripts, and outlier content research. You help them with content creation, marketing strategy, sales optimization, and overall business growth. Be direct, actionable, and strategic. Speak like a sharp, experienced CEO who genuinely cares about the user's revenue and growth. Use markdown formatting with headers, tables, bullet points, and bold text to make your analysis clear and scannable.
 
-IMPORTANT: You already have the user's data loaded below. Reference it directly — don't ask them to provide information you already have.`;
+IMPORTANT: You already have the user's data loaded below. Reference it directly — don't ask them to provide information you already have.
+
+=== COMMAND CENTER CAPABILITIES ===
+You have tools to CREATE tangible outputs in a split-screen artifact panel next to this chat:
+
+**create_artifact** — Use when the user asks you to MAKE something:
+- "Write an email to..." → type: "email", content: JSON string {"to":"recipient@email.com","subject":"Subject","body_html":"<p>HTML body</p>"}
+- "Create a newsletter" / "Build a landing page" → type: "html_template", content: complete standalone HTML with inline CSS
+- "Write a post for Instagram/LinkedIn/etc" → type: "content_post", content: the caption text with hashtags
+- "Write code for..." → type: "code_block", content: the code
+- "Draft a plan/strategy/report" → type: "markdown_doc", content: markdown text
+
+**generate_image** — Use for visual content: social graphics, thumbnails, etc.
+
+WHEN TO CREATE AN ARTIFACT vs JUST REPLY:
+- User asks to CREATE/WRITE/BUILD/DRAFT something tangible → use create_artifact
+- User asks a QUESTION or wants ANALYSIS/ADVICE → reply in text only
+- You CAN combine text + artifact: explain your approach, then create it
+
+ARTIFACT RULES:
+- For emails: write professional, well-formatted HTML. Include greeting and sign-off. Use brand colors if available.
+- For html_template: generate complete standalone HTML (<!DOCTYPE html>) with inline CSS. Make it beautiful and production-ready. Max-width 600px for emails, 1200px for landing pages.
+- For content_post: write the actual caption ready to copy-paste. Include relevant hashtags.
+- For code_block: include the language name at the top as a comment.
+- For markdown_doc: use proper heading hierarchy and formatting.
+- Always ask for missing critical info (like email recipient) before creating the artifact.
+- When generating images for content, call generate_image in addition to create_artifact.`;
 
 function buildFullSystemPrompt(brandDna, contentItems, integrationCtx, salesData, products, contacts, outlierData) {
   let prompt = BASE_PROMPT + '\n\n';
 
-  // Brand DNA
   if (brandDna) {
     prompt += `=== BRAND DNA ===\n`;
     if (brandDna.description) prompt += `Description: ${brandDna.description}\n`;
@@ -38,7 +67,6 @@ function buildFullSystemPrompt(brandDna, contentItems, integrationCtx, salesData
     prompt += '\n';
   }
 
-  // Content items (documents, social links, transcripts)
   if (contentItems?.length) {
     const docs = contentItems.filter(i => i.type === 'document' && i.extracted_text);
     const social = contentItems.filter(i => i.type === 'social');
@@ -71,12 +99,10 @@ function buildFullSystemPrompt(brandDna, contentItems, integrationCtx, salesData
     }
   }
 
-  // Integration context (connected services data)
   if (integrationCtx) {
     prompt += `=== BUSINESS DATA FROM INTEGRATIONS ===\n${integrationCtx}\n\n`;
   }
 
-  // Sales data
   if (salesData) {
     if (salesData.stats && Object.keys(salesData.stats).length) {
       prompt += `=== SALES STATS ===\n`;
@@ -106,7 +132,6 @@ function buildFullSystemPrompt(brandDna, contentItems, integrationCtx, salesData
     }
   }
 
-  // Products
   if (products?.length) {
     prompt += `=== PRODUCTS (${products.length}) ===\n`;
     products.forEach(p => {
@@ -118,7 +143,6 @@ function buildFullSystemPrompt(brandDna, contentItems, integrationCtx, salesData
     prompt += '\n';
   }
 
-  // Contacts
   if (contacts?.length) {
     prompt += `=== CONTACTS / CRM (${contacts.length}) ===\n`;
     contacts.slice(0, 50).forEach(c => {
@@ -131,7 +155,6 @@ function buildFullSystemPrompt(brandDna, contentItems, integrationCtx, salesData
     prompt += '\n';
   }
 
-  // Outlier research
   if (outlierData) {
     if (outlierData.creators?.length) {
       prompt += `=== OUTLIER RESEARCH — CREATORS FOLLOWED (${outlierData.creators.length}) ===\n`;
@@ -157,7 +180,55 @@ function buildFullSystemPrompt(brandDna, contentItems, integrationCtx, salesData
   return prompt;
 }
 
-async function streamResponse(messages, systemPrompt, onChunk, abortSignal) {
+// ── Tool Definitions ──
+const CEO_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'create_artifact',
+      description: 'Create a visual artifact in the split-screen panel. Use for emails, HTML templates (newsletters/landing pages), social media posts, code, or documents.',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['email', 'html_template', 'content_post', 'code_block', 'markdown_doc'],
+            description: 'The artifact type.',
+          },
+          title: {
+            type: 'string',
+            description: 'Short descriptive title for the artifact.',
+          },
+          content: {
+            type: 'string',
+            description: 'The artifact content. email: JSON string {"to":"...","subject":"...","body_html":"..."}. html_template: complete standalone HTML. content_post: caption text. code_block: code. markdown_doc: markdown.',
+          },
+        },
+        required: ['type', 'title', 'content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_image',
+      description: 'Generate a professional image for content, social media graphics, or thumbnails.',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: {
+            type: 'string',
+            description: 'Detailed image prompt: style, subject, composition, colors, text overlays. Must be professional quality.',
+          },
+        },
+        required: ['prompt'],
+      },
+    },
+  },
+];
+
+// ── Streaming with Tool Calls ──
+async function streamWithTools(messages, systemPrompt, onTextChunk, onToolCalls, abortSignal) {
   const res = await fetch('/api/xai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -168,6 +239,8 @@ async function streamResponse(messages, systemPrompt, onChunk, abortSignal) {
       model: 'grok-3-fast',
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
       stream: true,
+      tools: CEO_TOOLS,
+      tool_choice: 'auto',
     }),
     signal: abortSignal,
   });
@@ -180,6 +253,7 @@ async function streamResponse(messages, systemPrompt, onChunk, abortSignal) {
   const decoder = new TextDecoder();
   let fullContent = '';
   let buffer = '';
+  let toolCalls = {};
 
   while (true) {
     const { done, value } = await reader.read();
@@ -193,24 +267,59 @@ async function streamResponse(messages, systemPrompt, onChunk, abortSignal) {
       const data = trimmed.slice(6);
       if (data === '[DONE]') continue;
       try {
-        const delta = JSON.parse(data).choices?.[0]?.delta?.content;
-        if (delta) { fullContent += delta; onChunk(fullContent); }
-      } catch { /* skip */ }
+        const parsed = JSON.parse(data);
+        const choice = parsed.choices?.[0];
+        if (!choice) continue;
+
+        const textDelta = choice.delta?.content;
+        if (textDelta) {
+          fullContent += textDelta;
+          onTextChunk(fullContent);
+        }
+
+        const tc = choice.delta?.tool_calls;
+        if (tc) {
+          for (const call of tc) {
+            const idx = call.index ?? 0;
+            if (!toolCalls[idx]) toolCalls[idx] = { id: call.id || '', name: '', arguments: '' };
+            if (call.id) toolCalls[idx].id = call.id;
+            if (call.function?.name) toolCalls[idx].name = call.function.name;
+            if (call.function?.arguments) toolCalls[idx].arguments += call.function.arguments;
+          }
+        }
+      } catch { /* skip malformed */ }
     }
   }
-  return fullContent;
+
+  const calls = Object.values(toolCalls).filter(tc => tc.name);
+  if (calls.length > 0) await onToolCalls(calls);
+
+  return { content: fullContent, toolCalls: calls };
 }
 
+// ── Component ──
 export default function AiCeo() {
+  const inboxCtx = useOutletContext() || {};
+  const emailAccounts = inboxCtx.accounts || [];
+
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [contextReady, setContextReady] = useState(false);
+  const [artifact, setArtifact] = useState(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [splitPct, setSplitPct] = useState(45);
+  const [dragging, setDragging] = useState(false);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth <= 768 : false);
+  const [mobileArtifactOpen, setMobileArtifactOpen] = useState(false);
+
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
   const abortRef = useRef(null);
+  const splitRef = useRef(null);
+  const isMobileRef = useRef(isMobile);
   const contextRef = useRef({
     brandDna: null,
     contentItems: [],
@@ -222,41 +331,43 @@ export default function AiCeo() {
   });
 
   const hasMessages = messages.length > 0;
+  const showPanel = panelOpen && artifact && !isMobile;
 
   const starters = [
-    'Help me plan content for this week across all of my channels.',
-    'Analyze my sales calls and tell me my top 5 objections based on my client calls.',
-    'Tell me five things I should record more content about.',
-    'Write a newsletter to sell my product to my audience.',
+    'Draft an email to follow up with my leads about my top product.',
+    'Create a newsletter announcing my latest offer to my audience.',
+    'Write a LinkedIn post highlighting my business growth.',
+    'Build a strategy to increase my conversion rate this month.',
   ];
 
-  // Fetch ALL business context on mount
+  // ── Responsive ──
+  useEffect(() => {
+    isMobileRef.current = isMobile;
+  }, [isMobile]);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // ── Fetch Business Context ──
   useEffect(() => {
     async function loadContext() {
       const results = await Promise.allSettled([
-        // 0: Brand DNA
         supabase.auth.getSession().then(async ({ data: { session } }) => {
           if (!session?.user) return null;
           const { data } = await supabase.from('brand_dna').select('*').eq('user_id', session.user.id).single();
           return data;
         }),
-        // 1: Content items
         getContentItems().then(r => r.items || []),
-        // 2: Integration context
         getIntegrationContext().then(r => r.context || ''),
-        // 3: Sales stats
         getSalesStats().then(r => r.stats || {}),
-        // 4: Sales revenue
         getSalesRevenue('Month').then(r => r.data || []),
-        // 5: Sales calls
         getSalesCalls().then(r => r.calls || []),
-        // 6: Products
         getProducts().then(r => r.products || []),
-        // 7: Contacts
         getContacts().then(r => r.contacts || []),
-        // 8: Outlier creators
         getOutlierCreators().then(r => r.creators || []),
-        // 9: Outlier videos (top outliers only)
         getOutlierVideos({ outliersOnly: true }).then(r => r.videos || []),
       ]);
 
@@ -279,77 +390,131 @@ export default function AiCeo() {
         },
       };
 
-      console.log('[AI CEO] Context loaded:', {
-        brandDna: !!contextRef.current.brandDna,
-        contentItems: contextRef.current.contentItems.length,
-        integrationCtx: contextRef.current.integrationCtx.length > 0,
-        salesCalls: contextRef.current.salesData.calls.length,
-        products: contextRef.current.products.length,
-        contacts: contextRef.current.contacts.length,
-        outlierCreators: contextRef.current.outlierData.creators.length,
-        outlierVideos: contextRef.current.outlierData.videos.length,
-      });
-
       setContextReady(true);
     }
     loadContext();
   }, []);
 
+  // ── Auto-scroll ──
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // ── Draggable Divider ──
+  useEffect(() => {
+    if (!dragging) return;
+    const handleMove = (e) => {
+      const container = splitRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const x = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
+      const pct = (x / rect.width) * 100;
+      setSplitPct(Math.max(25, Math.min(75, pct)));
+    };
+    const handleUp = () => setDragging(false);
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+    document.addEventListener('touchmove', handleMove);
+    document.addEventListener('touchend', handleUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+      document.removeEventListener('touchmove', handleMove);
+      document.removeEventListener('touchend', handleUp);
+    };
+  }, [dragging]);
+
+  // ── Send to AI ──
   const sendToAI = useCallback(async (chatHistory) => {
     setIsGenerating(true);
-
     const assistantMsgId = `msg-${Date.now()}-ai`;
-
-    setMessages((prev) => [
-      ...prev,
-      { id: assistantMsgId, role: 'assistant', content: '' },
-    ]);
+    setMessages(prev => [...prev, { id: assistantMsgId, role: 'assistant', content: '', hasArtifact: false }]);
 
     try {
       const abort = new AbortController();
       abortRef.current = abort;
 
-      const apiMessages = chatHistory.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
+      const apiMessages = chatHistory.map(m => ({ role: m.role, content: m.content }));
       const ctx = contextRef.current;
       const systemPrompt = buildFullSystemPrompt(
-        ctx.brandDna,
-        ctx.contentItems,
-        ctx.integrationCtx,
-        ctx.salesData,
-        ctx.products,
-        ctx.contacts,
-        ctx.outlierData,
+        ctx.brandDna, ctx.contentItems, ctx.integrationCtx,
+        ctx.salesData, ctx.products, ctx.contacts, ctx.outlierData,
       );
 
-      await streamResponse(
+      await streamWithTools(
         apiMessages,
         systemPrompt,
+        // onTextChunk
         (text) => {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId ? { ...m, content: text } : m
-            )
-          );
+          setMessages(prev => prev.map(m =>
+            m.id === assistantMsgId ? { ...m, content: text } : m
+          ));
         },
-        abort.signal
+        // onToolCalls
+        async (calls) => {
+          let createdArtifact = null;
+
+          for (const call of calls) {
+            if (call.name === 'create_artifact') {
+              try {
+                const args = JSON.parse(call.arguments);
+                createdArtifact = {
+                  id: Date.now(),
+                  type: args.type,
+                  title: args.title,
+                  content: args.content,
+                  images: [],
+                };
+                setArtifact(createdArtifact);
+                setPanelOpen(true);
+                if (isMobileRef.current) setMobileArtifactOpen(true);
+                // Mark message as having an artifact
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantMsgId ? { ...m, hasArtifact: true, artifactTitle: args.title, artifactType: args.type } : m
+                ));
+              } catch (e) {
+                console.error('Artifact parse error:', e);
+              }
+            }
+          }
+
+          // Process image generation calls
+          for (const call of calls) {
+            if (call.name === 'generate_image') {
+              try {
+                const args = JSON.parse(call.arguments);
+                const brandData = ctx.brandDna ? {
+                  photoUrls: ctx.brandDna.photo_urls || [],
+                  logoUrl: ctx.brandDna.logo_url || null,
+                  colors: ctx.brandDna.colors || {},
+                  mainFont: ctx.brandDna.main_font || null,
+                } : null;
+                const result = await generateImage(args.prompt, 'general', brandData);
+                if (result.image) {
+                  const src = `data:${result.image.mimeType};base64,${result.image.data}`;
+                  setArtifact(prev => {
+                    if (prev) return { ...prev, images: [...(prev.images || []), { src }] };
+                    const newArt = { id: Date.now(), type: 'content_post', title: 'Generated Image', content: '', images: [{ src }] };
+                    setPanelOpen(true);
+                    if (isMobileRef.current) setMobileArtifactOpen(true);
+                    return newArt;
+                  });
+                }
+              } catch (e) {
+                console.error('Image gen error:', e);
+              }
+            }
+          }
+        },
+        abort.signal,
       );
     } catch (err) {
       if (err.name !== 'AbortError') {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMsgId
-              ? { ...m, content: 'Something went wrong. Please try again.' }
-              : m
-          )
-        );
+        setMessages(prev => prev.map(m =>
+          m.id === assistantMsgId
+            ? { ...m, content: 'Something went wrong. Please try again.' }
+            : m
+        ));
       }
     } finally {
       abortRef.current = null;
@@ -368,7 +533,6 @@ export default function AiCeo() {
   const sendMessage = useCallback(() => {
     const text = input.trim();
     if (!text || isGenerating) return;
-
     const userMsg = { id: `msg-${Date.now()}-user`, role: 'user', content: text };
     const updated = [...messages, userMsg];
     setMessages(updated);
@@ -403,157 +567,223 @@ export default function AiCeo() {
       setIsListening(false);
       return;
     }
-
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
-
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.lang = 'en-US';
-
     recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript;
-      setInput((prev) => (prev ? prev + ' ' + transcript : transcript));
+      setInput(prev => (prev ? prev + ' ' + transcript : transcript));
       setIsListening(false);
     };
-
     recognition.onerror = () => setIsListening(false);
     recognition.onend = () => setIsListening(false);
-
     recognitionRef.current = recognition;
     recognition.start();
     setIsListening(true);
   };
 
+  // ── Render ──
   return (
-    <div className="aiceo-page">
-      {!hasMessages && (
-        <div className="aiceo-hero">
-          <img src="/favicon.png" alt="AI CEO" className="aiceo-hero-logo" />
-          <div className="aiceo-starters">
-            {starters.map((s, i) => (
-              <button key={i} className="aiceo-starter" onClick={() => handleStarter(s)}>
-                <img src="/favicon.png" alt="" className="aiceo-starter-logo" />
-                <span>{s}</span>
-              </button>
-            ))}
-          </div>
-          <div className="aiceo-input-area">
-            <div className="aiceo-input-glow" />
-            <div className="aiceo-input-wrapper">
-              <textarea
-                ref={inputRef}
-                className="aiceo-input"
-                placeholder="How can your AI CEO help you?"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                rows={3}
-              />
-              <div className="aiceo-input-actions">
-                <button
-                  className={`aiceo-voice-btn ${isListening ? 'aiceo-voice-btn--active' : ''}`}
-                  onClick={toggleVoice}
-                  title={isListening ? 'Stop listening' : 'Voice input'}
-                >
-                  {isListening ? <Square size={18} /> : <Mic size={18} />}
-                </button>
-                <button
-                  className="aiceo-send-btn"
-                  onClick={sendMessage}
-                  disabled={!input.trim() || isGenerating}
-                >
-                  <Send size={18} />
-                </button>
+    <div className="ceo-page">
+      <div
+        className={`ceo-split ${dragging ? 'ceo-split--dragging' : ''}`}
+        ref={splitRef}
+      >
+        {/* ── Chat Panel ── */}
+        <div
+          className={`ceo-chat ${showPanel ? 'ceo-chat--split' : ''}`}
+          style={showPanel ? { width: `${splitPct}%` } : undefined}
+        >
+          {!hasMessages && (
+            <div className="ceo-hero">
+              <img src="/favicon.png" alt="AI CEO" className="ceo-hero-logo" />
+              <div className="ceo-starters">
+                {starters.map((s, i) => (
+                  <button key={i} className="ceo-starter" onClick={() => handleStarter(s)}>
+                    <img src="/favicon.png" alt="" className="ceo-starter-logo" />
+                    <span>{s}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="ceo-input-area">
+                <div className="ceo-input-glow" />
+                <div className="ceo-input-wrapper">
+                  <textarea
+                    ref={inputRef}
+                    className="ceo-input"
+                    placeholder="How can your AI CEO help you?"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    rows={3}
+                  />
+                  <div className="ceo-input-actions">
+                    <button
+                      className={`ceo-voice-btn ${isListening ? 'ceo-voice-btn--active' : ''}`}
+                      onClick={toggleVoice}
+                      title={isListening ? 'Stop listening' : 'Voice input'}
+                    >
+                      {isListening ? <Square size={18} /> : <Mic size={18} />}
+                    </button>
+                    <button
+                      className="ceo-send-btn"
+                      onClick={sendMessage}
+                      disabled={!input.trim() || isGenerating}
+                    >
+                      <Send size={18} />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {hasMessages && (
-        <div className="aiceo-messages">
-          {messages.map((msg) => {
-            if (msg.role === 'user') {
-              return (
-                <div key={msg.id} className="aiceo-bubble aiceo-bubble--user">
-                  <p className="aiceo-user-text">{msg.content}</p>
-                </div>
-              );
-            }
-            // Hide empty assistant placeholder until content starts streaming
-            if (!msg.content) {
-              return (
-                <div key={msg.id} className="aiceo-thinking">
-                  <span className="aiceo-thinking-text">
-                    thinking<span className="aiceo-dots"><span>.</span><span>.</span><span>.</span></span>
-                  </span>
-                </div>
-              );
-            }
-            return (
-              <div key={msg.id} className="aiceo-bubble aiceo-bubble--assistant">
-                <div className="aiceo-markdown">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      table: ({ children, ...props }) => (
-                        <div className="aiceo-table-scroll">
-                          <table {...props}>{children}</table>
+          {hasMessages && (
+            <>
+              <div className="ceo-messages">
+                {messages.map((msg) => {
+                  if (msg.role === 'user') {
+                    return (
+                      <div key={msg.id} className="ceo-bubble ceo-bubble--user">
+                        <p className="ceo-user-text">{msg.content}</p>
+                      </div>
+                    );
+                  }
+                  if (!msg.content && !msg.hasArtifact) {
+                    return (
+                      <div key={msg.id} className="ceo-thinking">
+                        <span className="ceo-thinking-text">
+                          thinking<span className="ceo-dots"><span>.</span><span>.</span><span>.</span></span>
+                        </span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={msg.id} className="ceo-msg-group">
+                      {msg.content && (
+                        <div className="ceo-bubble ceo-bubble--assistant">
+                          <div className="ceo-markdown">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                table: ({ children, ...props }) => (
+                                  <div className="ceo-table-scroll">
+                                    <table {...props}>{children}</table>
+                                  </div>
+                                ),
+                              }}
+                            >
+                              {msg.content}
+                            </ReactMarkdown>
+                          </div>
                         </div>
-                      ),
-                    }}
-                  >
-                    {msg.content}
-                  </ReactMarkdown>
+                      )}
+                      {msg.hasArtifact && (
+                        <button
+                          className="ceo-artifact-card"
+                          onClick={() => {
+                            setPanelOpen(true);
+                            if (isMobile) setMobileArtifactOpen(true);
+                          }}
+                        >
+                          <Eye size={16} />
+                          <span>{msg.artifactTitle || 'View Artifact'}</span>
+                          <span className="ceo-artifact-card-badge">
+                            {ARTIFACT_TYPES[msg.artifactType]?.label || 'Output'}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </div>
+
+              <div className="ceo-input-area ceo-input-area--bottom">
+                <div className="ceo-input-glow" />
+                <div className="ceo-input-wrapper">
+                  <textarea
+                    className="ceo-input"
+                    placeholder="Ask your AI CEO..."
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onInput={autoResize}
+                    onKeyDown={handleKeyDown}
+                    rows={1}
+                  />
+                  <div className="ceo-input-actions">
+                    <button
+                      className={`ceo-voice-btn ${isListening ? 'ceo-voice-btn--active' : ''}`}
+                      onClick={toggleVoice}
+                      title={isListening ? 'Stop listening' : 'Voice input'}
+                    >
+                      {isListening ? <Square size={18} /> : <Mic size={18} />}
+                    </button>
+                    {isGenerating ? (
+                      <button className="ceo-send-btn ceo-stop-btn" onClick={stopGenerating}>
+                        <CircleStop size={18} />
+                      </button>
+                    ) : (
+                      <button
+                        className="ceo-send-btn"
+                        onClick={sendMessage}
+                        disabled={!input.trim()}
+                      >
+                        <Send size={18} />
+                      </button>
+                    )}
+                    {artifact && !showPanel && !isMobile && (
+                      <button
+                        className="ceo-panel-toggle"
+                        onClick={() => setPanelOpen(true)}
+                        title="Show artifact panel"
+                      >
+                        <PanelRightOpen size={18} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            );
-          })}
-          <div ref={messagesEndRef} />
+            </>
+          )}
         </div>
-      )}
 
-      {hasMessages && (
-        <div className="aiceo-input-area aiceo-input-area--bottom">
-          <div className="aiceo-input-glow" />
-          <div className="aiceo-input-wrapper">
-            <textarea
-              className="aiceo-input"
-              placeholder="Ask your AI CEO..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onInput={autoResize}
-              onKeyDown={handleKeyDown}
-              rows={1}
-            />
-            <div className="aiceo-input-actions">
-              <button
-                className={`aiceo-voice-btn ${isListening ? 'aiceo-voice-btn--active' : ''}`}
-                onClick={toggleVoice}
-                title={isListening ? 'Stop listening' : 'Voice input'}
-              >
-                {isListening ? <Square size={18} /> : <Mic size={18} />}
-              </button>
-              {isGenerating ? (
-                <button
-                  className="aiceo-send-btn aiceo-stop-btn"
-                  onClick={stopGenerating}
-                >
-                  <CircleStop size={18} />
-                </button>
-              ) : (
-                <button
-                  className="aiceo-send-btn"
-                  onClick={sendMessage}
-                  disabled={!input.trim()}
-                >
-                  <Send size={18} />
-                </button>
-              )}
-            </div>
+        {/* ── Divider ── */}
+        {showPanel && (
+          <div
+            className="ceo-divider"
+            onMouseDown={(e) => { e.preventDefault(); setDragging(true); }}
+            onTouchStart={(e) => { e.preventDefault(); setDragging(true); }}
+          >
+            <div className="ceo-divider-handle" />
           </div>
+        )}
+
+        {/* ── Artifact Panel (desktop) ── */}
+        {showPanel && (
+          <div className="ceo-artifact-panel" style={{ width: `${100 - splitPct}%` }}>
+            <ArtifactPanel
+              key={artifact?.id}
+              artifact={artifact}
+              emailAccounts={emailAccounts}
+              onClose={() => setPanelOpen(false)}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* ── Mobile: Artifact Overlay ── */}
+      {isMobile && mobileArtifactOpen && artifact && (
+        <div className="ceo-mobile-overlay">
+          <ArtifactPanel
+            key={`mobile-${artifact?.id}`}
+            artifact={artifact}
+            emailAccounts={emailAccounts}
+            onClose={() => setMobileArtifactOpen(false)}
+          />
         </div>
       )}
     </div>

@@ -1,0 +1,236 @@
+import { Router } from 'express';
+import { supabase } from '../middleware/auth.js';
+import { createBot, leaveMeeting, deleteBot, detectPlatform } from '../services/recall.js';
+import { processCompletedMeeting } from '../services/ai-processor.js';
+import { deleteRecording } from '../services/storage.js';
+
+const router = Router();
+
+// GET /api/meetings — List meetings (paginated, filtered)
+router.get('/', async (req, res) => {
+  const userId = req.user.id;
+  const { platform, status, search, page = 1, limit = 20 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+
+  let query = supabase
+    .from('meetings')
+    .select('id, title, meeting_url, platform, recall_bot_status, scheduled_at, started_at, ended_at, duration_seconds, bot_name, participants, summary, action_items, created_at, video_url, audio_url', { count: 'exact' })
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + parseInt(limit) - 1);
+
+  if (platform) query = query.eq('platform', platform);
+  if (status) query = query.eq('recall_bot_status', status);
+  if (search) {
+    query = query.or(`title.ilike.%${search}%,transcript_text.ilike.%${search}%`);
+  }
+
+  const { data, error, count } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({
+    meetings: data,
+    total: count,
+    page: parseInt(page),
+    totalPages: Math.ceil((count || 0) / parseInt(limit)),
+  });
+});
+
+// GET /api/meetings/:id — Single meeting with all details
+router.get('/:id', async (req, res) => {
+  const userId = req.user.id;
+
+  const { data: meeting, error } = await supabase
+    .from('meetings')
+    .select('*')
+    .eq('id', req.params.id)
+    .eq('user_id', userId)
+    .single();
+
+  if (error || !meeting) return res.status(404).json({ error: 'Meeting not found' });
+
+  // Get transcript segments
+  const { data: segments } = await supabase
+    .from('transcript_segments')
+    .select('*')
+    .eq('meeting_id', meeting.id)
+    .eq('is_partial', false)
+    .order('sequence_index', { ascending: true });
+
+  // Get linked contacts
+  const { data: contacts } = await supabase
+    .from('meeting_contacts')
+    .select('contact_id, role')
+    .eq('meeting_id', meeting.id);
+
+  res.json({ meeting, segments: segments || [], contacts: contacts || [] });
+});
+
+// POST /api/meetings — Create meeting + dispatch Recall bot
+router.post('/', async (req, res) => {
+  const userId = req.user.id;
+  const { meeting_url, title, bot_name, template, scheduled_at } = req.body;
+
+  if (!meeting_url) return res.status(400).json({ error: 'meeting_url is required' });
+
+  const platform = detectPlatform(meeting_url);
+
+  try {
+    // Insert meeting row
+    const { data: meeting, error: insertErr } = await supabase
+      .from('meetings')
+      .insert({
+        user_id: userId,
+        meeting_url,
+        title: title || `Meeting - ${new Date().toLocaleDateString()}`,
+        platform,
+        bot_name: bot_name || 'PurelyPersonal Notetaker',
+        summary_template: template || 'general',
+        recall_bot_status: 'creating',
+        scheduled_at: scheduled_at || null,
+      })
+      .select()
+      .single();
+
+    if (insertErr) throw insertErr;
+
+    // Dispatch Recall.ai bot
+    const bot = await createBot(meeting_url, {
+      botName: meeting.bot_name,
+      userId,
+      meetingId: meeting.id,
+      joinAt: scheduled_at || undefined,
+    });
+
+    // Update with bot ID
+    await supabase
+      .from('meetings')
+      .update({
+        recall_bot_id: bot.id,
+        recall_bot_status: bot.status?.code || 'ready',
+      })
+      .eq('id', meeting.id);
+
+    res.status(201).json({
+      meeting: { ...meeting, recall_bot_id: bot.id, recall_bot_status: bot.status?.code || 'ready' },
+    });
+  } catch (err) {
+    console.error('[meetings] Create error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/meetings/:id — Update title, template
+router.patch('/:id', async (req, res) => {
+  const userId = req.user.id;
+  const { title, summary_template } = req.body;
+
+  const updates = { updated_at: new Date().toISOString() };
+  if (title !== undefined) updates.title = title;
+  if (summary_template !== undefined) updates.summary_template = summary_template;
+
+  const { data, error } = await supabase
+    .from('meetings')
+    .update(updates)
+    .eq('id', req.params.id)
+    .eq('user_id', userId)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ meeting: data });
+});
+
+// DELETE /api/meetings/:id — Delete meeting + recording + data
+router.delete('/:id', async (req, res) => {
+  const userId = req.user.id;
+
+  const { data: meeting } = await supabase
+    .from('meetings')
+    .select('id, recall_bot_id, recall_bot_status')
+    .eq('id', req.params.id)
+    .eq('user_id', userId)
+    .single();
+
+  if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
+
+  // Try to cancel bot if still active
+  if (meeting.recall_bot_id && !['done', 'fatal', 'processed', 'error'].includes(meeting.recall_bot_status)) {
+    try {
+      await deleteBot(meeting.recall_bot_id);
+    } catch (e) {
+      console.log('[meetings] Bot already completed or deleted');
+    }
+  }
+
+  // Delete recording from storage
+  try {
+    await deleteRecording(meeting.id);
+  } catch (e) {
+    console.log('[meetings] No recording to delete');
+  }
+
+  // Delete meeting (cascades to segments, contacts)
+  const { error } = await supabase
+    .from('meetings')
+    .delete()
+    .eq('id', meeting.id);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// POST /api/meetings/:id/stop — Force bot to leave
+router.post('/:id/stop', async (req, res) => {
+  const userId = req.user.id;
+
+  const { data: meeting } = await supabase
+    .from('meetings')
+    .select('recall_bot_id')
+    .eq('id', req.params.id)
+    .eq('user_id', userId)
+    .single();
+
+  if (!meeting?.recall_bot_id) return res.status(404).json({ error: 'Meeting not found or no bot assigned' });
+
+  try {
+    await leaveMeeting(meeting.recall_bot_id);
+    await supabase
+      .from('meetings')
+      .update({ recall_bot_status: 'stopped', ended_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/meetings/:id/reprocess — Re-run AI with different template
+router.post('/:id/reprocess', async (req, res) => {
+  const userId = req.user.id;
+  const { template } = req.body;
+
+  if (template) {
+    await supabase
+      .from('meetings')
+      .update({ summary_template: template })
+      .eq('id', req.params.id)
+      .eq('user_id', userId);
+  }
+
+  try {
+    await processCompletedMeeting(req.params.id);
+    const { data: updated } = await supabase
+      .from('meetings')
+      .select('summary, action_items, chapters')
+      .eq('id', req.params.id)
+      .single();
+
+    res.json({ meeting: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;
