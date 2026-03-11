@@ -12,7 +12,7 @@ router.get('/active', async (req, res) => {
 
   const { data, error } = await supabase
     .from('meetings')
-    .select('id, title, meeting_url, platform, recall_bot_id, recall_bot_status, bot_name, started_at, created_at')
+    .select('id, title, meeting_url, platform, recall_bot_status, bot_name, started_at, created_at')
     .eq('user_id', userId)
     .in('recall_bot_status', activeStatuses)
     .order('created_at', { ascending: false });
@@ -34,7 +34,7 @@ router.get('/:meetingId/status', async (req, res) => {
 
   if (!meeting) return res.status(404).json({ error: 'Meeting not found' });
 
-  // Optionally fetch fresh status from Recall
+  // Optionally fetch fresh status
   let liveStatus = meeting.recall_bot_status;
   if (meeting.recall_bot_id && !['done', 'processed', 'error', 'fatal'].includes(meeting.recall_bot_status)) {
     try {
@@ -53,7 +53,7 @@ router.get('/:meetingId/status', async (req, res) => {
     }
   }
 
-  res.json({ status: liveStatus, recall_bot_id: meeting.recall_bot_id });
+  res.json({ status: liveStatus });
 });
 
 export default router;

@@ -55,7 +55,7 @@ function verifySvixWebhook(req) {
 
 // Helper: find meeting by bot ID from webhook data
 async function findMeetingByBot(data) {
-  // Recall sends bot ID in data.bot.id (nested object)
+  // Bot ID is in data.bot.id (nested object)
   const botId = data?.bot?.id || data?.bot_id || data?.data?.bot_id;
   if (!botId) return { botId: null, meeting: null };
 
@@ -83,8 +83,7 @@ async function findMeetingByRecording(data) {
 }
 
 // ══════════════════════════════════════════════════
-// Single Svix webhook endpoint for ALL Recall events
-// (bot.*, recording.*, transcript.*)
+// Webhook endpoint for bot/recording/transcript events
 // ══════════════════════════════════════════════════
 router.post('/api/webhooks/recall', async (req, res) => {
   let payload;
@@ -154,10 +153,9 @@ router.post('/api/webhooks/recall', async (req, res) => {
           console.log(`[webhook] Bot recordings:`, JSON.stringify(bot?.recordings?.map(r => ({ id: r.id, status: r.status, media_shortcuts: r.media_shortcuts })), null, 2));
           if (bot?.recordings?.length) {
             for (const rec of bot.recordings) {
-              // Recall.ai uses media_shortcuts.video_mixed.data.download_url
               const mediaUrl = rec.media_shortcuts?.video_mixed?.data?.download_url;
               if (mediaUrl) {
-                console.log(`[webhook] Downloading recording from: ${mediaUrl.slice(0, 100)}...`);
+                console.log(`[webhook] Downloading recording for meeting ${meeting.id}`);
                 const { buffer, contentType } = await downloadFromUrl(mediaUrl);
                 const ext = contentType.includes('video') ? 'mp4' : 'mp3';
                 const { path, url } = await uploadRecording(meeting.id, buffer, `recording.${ext}`, contentType);
@@ -253,7 +251,7 @@ router.post('/api/webhooks/recall', async (req, res) => {
   }
 });
 
-// Also keep the real-time transcript endpoint (called by Recall's real-time endpoint, not Svix)
+// Real-time transcript endpoint
 router.post('/api/webhooks/recall/transcript', async (req, res) => {
   const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
@@ -416,11 +414,10 @@ async function handleMeetingDone(meetingId, userId, botId) {
     // 3. Download and store recording if available
     if (bot?.recordings?.length) {
       for (const rec of bot.recordings) {
-        // Recall.ai uses media_shortcuts.video_mixed.data.download_url
         const mediaUrl = rec.media_shortcuts?.video_mixed?.data?.download_url;
         if (mediaUrl) {
           try {
-            console.log(`[pipeline] Downloading recording from: ${mediaUrl.slice(0, 100)}...`);
+            console.log(`[pipeline] Downloading recording for meeting ${meetingId}`);
             const { buffer, contentType } = await downloadFromUrl(mediaUrl);
             const ext = contentType.includes('video') ? 'mp4' : 'mp3';
             const { path, url } = await uploadRecording(meetingId, buffer, `recording.${ext}`, contentType);

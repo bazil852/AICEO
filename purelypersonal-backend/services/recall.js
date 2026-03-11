@@ -14,7 +14,7 @@ async function recallFetch(path, options = {}) {
   if (!res.ok) {
     const text = await res.text();
     console.error(`[recall] ${options.method || 'GET'} ${path} → ${res.status}: ${text}`);
-    throw new Error(`Recall API error ${res.status}: ${text}`);
+    throw new Error(`Meeting service error: unable to complete request`);
   }
 
   if (res.status === 204) return null;

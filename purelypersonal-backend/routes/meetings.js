@@ -6,6 +6,13 @@ import { deleteRecording } from '../services/storage.js';
 
 const router = Router();
 
+// Strip internal fields from meeting objects before sending to client
+function sanitizeMeeting(m) {
+  if (!m) return m;
+  const { recall_bot_id, ...safe } = m;
+  return safe;
+}
+
 // GET /api/meetings — List meetings (paginated, filtered)
 router.get('/', async (req, res) => {
   const userId = req.user.id;
@@ -29,7 +36,7 @@ router.get('/', async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
 
   res.json({
-    meetings: data,
+    meetings: (data || []).map(sanitizeMeeting),
     total: count,
     page: parseInt(page),
     totalPages: Math.ceil((count || 0) / parseInt(limit)),
@@ -63,10 +70,10 @@ router.get('/:id', async (req, res) => {
     .select('contact_id, role')
     .eq('meeting_id', meeting.id);
 
-  res.json({ meeting, segments: segments || [], contacts: contacts || [] });
+  res.json({ meeting: sanitizeMeeting(meeting), segments: segments || [], contacts: contacts || [] });
 });
 
-// POST /api/meetings — Create meeting + dispatch Recall bot
+// POST /api/meetings — Create meeting + dispatch notetaker bot
 router.post('/', async (req, res) => {
   const userId = req.user.id;
   const { meeting_url, title, bot_name, template, scheduled_at } = req.body;
@@ -94,7 +101,7 @@ router.post('/', async (req, res) => {
 
     if (insertErr) throw insertErr;
 
-    // Dispatch Recall.ai bot
+    // Dispatch notetaker bot
     const bot = await createBot(meeting_url, {
       botName: meeting.bot_name,
       userId,
@@ -112,11 +119,11 @@ router.post('/', async (req, res) => {
       .eq('id', meeting.id);
 
     res.status(201).json({
-      meeting: { ...meeting, recall_bot_id: bot.id, recall_bot_status: bot.status?.code || 'ready' },
+      meeting: { ...meeting, recall_bot_status: bot.status?.code || 'ready' },
     });
   } catch (err) {
     console.error('[meetings] Create error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to create meeting. Please check the meeting URL and try again.' });
   }
 });
 
@@ -138,7 +145,7 @@ router.patch('/:id', async (req, res) => {
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ meeting: data });
+  res.json({ meeting: sanitizeMeeting(data) });
 });
 
 // DELETE /api/meetings/:id — Delete meeting + recording + data
@@ -191,7 +198,7 @@ router.post('/:id/stop', async (req, res) => {
     .eq('user_id', userId)
     .single();
 
-  if (!meeting?.recall_bot_id) return res.status(404).json({ error: 'Meeting not found or no bot assigned' });
+  if (!meeting?.recall_bot_id) return res.status(404).json({ error: 'Meeting not found or no active session' });
 
   try {
     await leaveMeeting(meeting.recall_bot_id);
@@ -202,7 +209,7 @@ router.post('/:id/stop', async (req, res) => {
 
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to stop meeting recording' });
   }
 });
 
@@ -229,7 +236,7 @@ router.post('/:id/reprocess', async (req, res) => {
 
     res.json({ meeting: updated });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to reprocess meeting' });
   }
 });
 

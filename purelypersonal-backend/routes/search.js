@@ -44,7 +44,7 @@ router.get('/', async (req, res) => {
           snippet = (start > 0 ? '...' : '') + m.transcript_text.slice(start, end) + (end < m.transcript_text.length ? '...' : '');
         }
       }
-      const { transcript_text, ...rest } = m;
+      const { transcript_text, recall_bot_id, ...rest } = m;
       return { ...rest, snippet };
     });
 
