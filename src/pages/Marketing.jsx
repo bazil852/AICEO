@@ -6,7 +6,7 @@ import { MOCK_EMAILS } from './Inbox';
 import { MOCK_CALLS } from './Sales';
 import { INITIAL_PRODUCTS } from './Products';
 import { supabase } from '../lib/supabase';
-import { generateImage } from '../lib/api';
+import { generateImage, deployToNetlify } from '../lib/api';
 import './Pages.css';
 import './Marketing.css';
 
@@ -66,6 +66,7 @@ const TOOL_CONFIGS = {
       { label: 'Import From Template', style: 'outline', hasChevron: true, isTemplateToggle: true },
       { label: 'Copy As Prompt', style: 'primary' },
       { label: 'Copy Code', style: 'primary', hasChevron: true, isCopyCode: true },
+      { label: 'Deploy to Netlify', style: 'netlify', isNetlifyDeploy: true },
     ],
     templates: [
       { id: 'lp-1', name: 'Danny 1' },
@@ -768,6 +769,8 @@ function ToolTab({ config, activeTool, brandDna }) {
   const [uploadedFiles, setUploadedFiles] = useState([]); // { id, name, type, dataUrl?, textContent?, size }
   const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false);
   const [copyCodeOpen, setCopyCodeOpen] = useState(false);
+  const [deploying, setDeploying] = useState(false);
+  const [deployResult, setDeployResult] = useState(null); // { url, site_name }
 
   const splitRef = useRef(null);
   const contextRef = useRef(null);
@@ -1217,6 +1220,29 @@ function ToolTab({ config, activeTool, brandDna }) {
     navigator.clipboard.writeText(canvasHtml);
   };
 
+  const handleNetlifyDeploy = async () => {
+    if (!canvasHtml || deploying) return;
+    setDeploying(true);
+    setDeployResult(null);
+    try {
+      const result = await deployToNetlify(canvasHtml);
+      setDeployResult(result);
+      setChatMessages((prev) => [...prev, {
+        id: `msg-${Date.now()}-deploy`,
+        role: 'assistant',
+        text: `Deployed to Netlify! Your page is live at ${result.url}`,
+      }]);
+    } catch (err) {
+      setChatMessages((prev) => [...prev, {
+        id: `msg-${Date.now()}-deploy-err`,
+        role: 'assistant',
+        text: `Deploy failed: ${err.message}`,
+      }]);
+    } finally {
+      setDeploying(false);
+    }
+  };
+
   // Cleanup abort on unmount
   useEffect(() => {
     return () => {
@@ -1569,6 +1595,15 @@ function ToolTab({ config, activeTool, brandDna }) {
                       </div>
                     )}
                   </div>
+                ) : action.isNetlifyDeploy ? (
+                  <button
+                    key={i}
+                    className={`mkt-canvas-btn mkt-canvas-btn--netlify${deploying ? ' mkt-canvas-btn--loading' : ''}`}
+                    onClick={handleNetlifyDeploy}
+                    disabled={!canvasHtml || deploying}
+                  >
+                    {deploying ? 'Deploying...' : deployResult ? 'Redeploy' : 'Deploy to Netlify'}
+                  </button>
                 ) : (
                   <button
                     key={i}
@@ -1596,6 +1631,15 @@ function ToolTab({ config, activeTool, brandDna }) {
             )}
           </div>
         </div>
+        {deployResult && (
+          <div className="mkt-deploy-banner">
+            <span className="mkt-deploy-banner-dot" />
+            Live at{' '}
+            <a href={deployResult.url} target="_blank" rel="noopener noreferrer" className="mkt-deploy-banner-link">
+              {deployResult.url}
+            </a>
+          </div>
+        )}
         <div className="mkt-canvas-body" ref={canvasBodyRef}>
           <iframe
             ref={iframeRef}

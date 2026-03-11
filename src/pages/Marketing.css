@@ -412,6 +412,65 @@
   border-color: #222;
 }
 
+.mkt-canvas-btn--netlify {
+  background: #00c7b7;
+  color: #fff;
+  border: 1px solid #00c7b7;
+  font-weight: 600;
+}
+
+.mkt-canvas-btn--netlify:hover:not(:disabled) {
+  background: #00b0a2;
+  border-color: #00b0a2;
+}
+
+.mkt-canvas-btn--netlify:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mkt-canvas-btn--loading {
+  opacity: 0.8;
+  cursor: wait;
+}
+
+/* Deploy banner */
+.mkt-deploy-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px;
+  background: #f0fdf4;
+  border-bottom: 1px solid #bbf7d0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #166534;
+}
+
+.mkt-deploy-banner-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+  animation: mktDeployPulse 2s ease-in-out infinite;
+}
+
+@keyframes mktDeployPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.mkt-deploy-banner-link {
+  color: #00c7b7;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.mkt-deploy-banner-link:hover {
+  text-decoration: underline;
+}
+
 .mkt-canvas-btn-icon {
   width: 18px;
   height: 18px;

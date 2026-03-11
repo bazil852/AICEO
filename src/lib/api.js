@@ -440,6 +440,20 @@ export async function getIntegrationContext() {
   return res.json();
 }
 
+export async function deployToNetlify(html, siteName) {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_URL}/api/netlify/deploy`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html, siteName }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Deploy failed' }));
+    throw new Error(err.error);
+  }
+  return res.json();
+}
+
 // ─── Email ───
 
 export async function getEmailAccounts() {

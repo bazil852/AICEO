@@ -17,6 +17,7 @@ const NOTE_TAKERS = [
   { id: 'shopify', name: 'Shopify', logo: '/shopify-logo.png' },
   { id: 'kajabi', name: 'Kajabi', logo: '/kajabi-logo.png' },
   { id: 'gohighlevel', name: 'GoHighLevel', logo: '/gohighlevel-logo.png' },
+  { id: 'netlify', name: 'Netlify', logo: '/netlify-logo.svg' },
   { id: 'email', name: 'Email (SMTP/IMAP)', logo: '/smtp-logo.png', large: true },
 ];
 
@@ -996,6 +997,44 @@ export default function Settings() {
                   onClick={() => setModalOpen(null)}
                 >
                   Done
+                </button>
+              </>
+            )}
+
+            {/* Netlify: simple token entry */}
+            {modalOpen === 'netlify' && (
+              <>
+                <p className="modal-description">
+                  Connect Netlify to deploy landing pages directly from the Marketing tools with one click.
+                </p>
+                <div className="modal-connect-instructions">
+                  <details open>
+                    <summary className="modal-connect-summary">How to get your Netlify token</summary>
+                    <ol className="modal-connect-steps">
+                      <li>Go to <strong>app.netlify.com</strong> &gt; <strong>User settings</strong> &gt; <strong>Applications</strong></li>
+                      <li>Under <strong>Personal access tokens</strong>, click <strong>New access token</strong></li>
+                      <li>Give it a name (e.g. &quot;PurelyPersonal&quot;) and click <strong>Generate token</strong></li>
+                      <li>Copy the token and paste it below</li>
+                    </ol>
+                  </details>
+                </div>
+                <div className="modal-field">
+                  <label className="modal-label">Personal Access Token</label>
+                  <input
+                    type="text"
+                    className="modal-input"
+                    placeholder="Paste your Netlify token here"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                  />
+                </div>
+                {connectError && <p className="modal-error">{connectError}</p>}
+                <button
+                  className="modal-btn modal-btn--primary"
+                  disabled={!apiKey.trim() || connecting}
+                  onClick={handleConnect}
+                >
+                  {connecting ? <><Loader size={14} className="settings-spinner" /> Validating...</> : 'Connect'}
                 </button>
               </>
             )}

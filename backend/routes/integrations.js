@@ -8,10 +8,11 @@ import * as whop from '../services/integrations/whop.js';
 import * as gohighlevel from '../services/integrations/gohighlevel.js';
 import * as shopify from '../services/integrations/shopify.js';
 import * as kajabi from '../services/integrations/kajabi.js';
+import * as netlify from '../services/integrations/netlify.js';
 
 const router = Router();
 
-const services = { fireflies, fathom, stripe: stripeInt, whop, gohighlevel, shopify, kajabi };
+const services = { fireflies, fathom, stripe: stripeInt, whop, gohighlevel, shopify, kajabi, netlify };
 const VALID_PROVIDERS = Object.keys(services);
 
 // ─── List all user integrations (no keys in response) ───
@@ -328,6 +329,50 @@ router.get('/api/integration-context', async (req, res) => {
   }
 
   res.json({ context: sections.join('\n') });
+});
+
+// ─── Deploy to Netlify ───
+router.post('/api/netlify/deploy', async (req, res) => {
+  const userId = req.user.id;
+  if (userId === 'anonymous') return res.status(401).json({ error: 'Auth required' });
+
+  const { html, siteName } = req.body;
+  if (!html) return res.status(400).json({ error: 'html is required' });
+
+  // Get Netlify integration
+  const { data: integration, error: fetchErr } = await supabase
+    .from('integrations')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('provider', 'netlify')
+    .eq('is_active', true)
+    .single();
+
+  if (fetchErr || !integration) {
+    return res.status(400).json({ error: 'Netlify not connected. Connect it in Settings first.' });
+  }
+
+  try {
+    const result = await netlify.deploy(integration.api_key, html, {
+      siteName: siteName || `pp-${userId.slice(0, 8)}-${Date.now().toString(36)}`,
+      siteId: integration.metadata?.last_site_id || null,
+    });
+
+    // Store site ID for future deploys to the same site
+    await supabase
+      .from('integrations')
+      .update({
+        metadata: { ...integration.metadata, last_site_id: result.site_id, last_site_name: result.site_name },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', integration.id);
+
+    console.log(`[netlify] Deployed for user ${userId}: ${result.url}`);
+    res.json(result);
+  } catch (err) {
+    console.error(`[netlify] Deploy failed for user ${userId}:`, err.message);
+    res.status(500).json({ error: `Deploy failed: ${err.message}` });
+  }
 });
 
 export default router;
