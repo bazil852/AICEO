@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Search, Filter, ArrowUpDown, Plus, X, Phone, Mail, Building2, Calendar, Play, Download, ExternalLink, Send, Instagram, Linkedin, Trash2, RefreshCw, Loader2, CloudOff, AlertCircle, CheckCircle2, Upload, UserPlus } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, Plus, X, Phone, Mail, Building2, Calendar, Play, Download, ExternalLink, Send, Instagram, Linkedin, Trash2, RefreshCw, Loader2, CloudOff, AlertCircle, CheckCircle2, Upload, UserPlus, Check } from 'lucide-react';
 import { getContacts, createContact, updateContact as updateContactApi, deleteContact as deleteContactApi, getContactDetail, syncContacts, syncContactToGHL } from '../lib/api';
 import './CRM.css';
 
@@ -10,10 +10,6 @@ function XIcon({ size = 14 }) {
     </svg>
   );
 }
-
-const LISTS = [
-  { id: 'all', name: 'All' },
-];
 
 const SOCIAL_PLATFORMS = [
   { key: 'instagram', label: 'Instagram', Icon: Instagram, color: '#E1306C' },
@@ -29,6 +25,19 @@ const STATUS_COLORS = {
   'Qualified': { bg: '#f0fdf4', color: '#16a34a' },
   'Proposal Sent': { bg: '#fdf4ff', color: '#9333ea' },
 };
+
+const STORAGE_KEY = 'crm_custom_lists';
+
+function loadSavedLists() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveLists(lists) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(lists));
+}
 
 export default function CRM() {
   const [contacts, setContacts] = useState([]);
@@ -47,9 +56,16 @@ export default function CRM() {
   const [addingContact, setAddingContact] = useState(false);
   const [newContact, setNewContact] = useState({ name: '', email: '', phone: '', business: '' });
   const [csvImporting, setCsvImporting] = useState(false);
+  // List & filter state
+  const [customLists, setCustomLists] = useState(loadSavedLists);
+  const [showCreateList, setShowCreateList] = useState(false);
+  const [listForm, setListForm] = useState({ name: '', statuses: [], tags: [] });
+  const [showFilters, setShowFilters] = useState(false);
+  const [activeFilters, setActiveFilters] = useState({ statuses: [], tags: [] });
   const pageRef = useRef(null);
   const saveTimerRef = useRef(null);
   const csvInputRef = useRef(null);
+  const filterRef = useRef(null);
 
   useEffect(() => {
     loadContacts();
@@ -170,16 +186,94 @@ export default function CRM() {
     });
   }, []);
 
+  // Collect all unique tags from contacts for filter UI
+  const allTags = [...new Set(contacts.flatMap(c => c.tags || []))].sort();
+
+  // Determine active filter criteria (from list or toolbar)
+  const activeListObj = customLists.find(l => l.id === activeList);
+  const effectiveFilters = activeListObj
+    ? { statuses: activeListObj.statuses, tags: activeListObj.tags }
+    : activeFilters;
+
+  const hasActiveFilters = effectiveFilters.statuses.length > 0 || effectiveFilters.tags.length > 0;
+
   const filtered = contacts.filter((c) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      (c.name || '').toLowerCase().includes(q) ||
-      (c.email || '').toLowerCase().includes(q) ||
-      (c.business || '').toLowerCase().includes(q) ||
-      (c.phone || '').includes(q)
-    );
+    // Search filter
+    if (search) {
+      const q = search.toLowerCase();
+      if (
+        !(c.name || '').toLowerCase().includes(q) &&
+        !(c.email || '').toLowerCase().includes(q) &&
+        !(c.business || '').toLowerCase().includes(q) &&
+        !(c.phone || '').includes(q)
+      ) return false;
+    }
+    // Status filter
+    if (effectiveFilters.statuses.length > 0 && !effectiveFilters.statuses.includes(c.status)) return false;
+    // Tag filter
+    if (effectiveFilters.tags.length > 0 && !(c.tags || []).some(t => effectiveFilters.tags.includes(t))) return false;
+    return true;
   });
+
+  // Close filter dropdown on outside click
+  useEffect(() => {
+    if (!showFilters) return;
+    const handler = (e) => {
+      if (filterRef.current && !filterRef.current.contains(e.target)) setShowFilters(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showFilters]);
+
+  const handleCreateList = () => {
+    if (!listForm.name.trim()) return;
+    const newList = {
+      id: `list-${Date.now()}`,
+      name: listForm.name.trim(),
+      statuses: listForm.statuses,
+      tags: listForm.tags,
+    };
+    const updated = [...customLists, newList];
+    setCustomLists(updated);
+    saveLists(updated);
+    setActiveList(newList.id);
+    setShowCreateList(false);
+    setListForm({ name: '', statuses: [], tags: [] });
+    // Clear toolbar filters when switching to a list
+    setActiveFilters({ statuses: [], tags: [] });
+  };
+
+  const handleDeleteList = (listId) => {
+    const updated = customLists.filter(l => l.id !== listId);
+    setCustomLists(updated);
+    saveLists(updated);
+    if (activeList === listId) setActiveList('all');
+  };
+
+  const toggleFilterStatus = (status) => {
+    setActiveFilters(prev => ({
+      ...prev,
+      statuses: prev.statuses.includes(status)
+        ? prev.statuses.filter(s => s !== status)
+        : [...prev.statuses, status],
+    }));
+    // Switch to "All" tab when using toolbar filters
+    if (activeListObj) setActiveList('all');
+  };
+
+  const toggleFilterTag = (tag) => {
+    setActiveFilters(prev => ({
+      ...prev,
+      tags: prev.tags.includes(tag)
+        ? prev.tags.filter(t => t !== tag)
+        : [...prev.tags, tag],
+    }));
+    if (activeListObj) setActiveList('all');
+  };
+
+  const clearFilters = () => {
+    setActiveFilters({ statuses: [], tags: [] });
+  };
 
   const openContact = useCallback(async (contact, e) => {
     const page = pageRef.current;
@@ -231,6 +325,7 @@ export default function CRM() {
       <div className="crm-page" ref={pageRef}>
         <div className="crm-lists">
           <button className="crm-list-tab crm-list-tab--active">All</button>
+          <button className="crm-list-tab crm-list-tab--create"><Plus size={14} /> Create a new list</button>
         </div>
         <div className="crm-toolbar">
           <div className="crm-toolbar-left">
@@ -271,39 +366,116 @@ export default function CRM() {
     <div className="crm-page" ref={pageRef}>
       {/* List tabs */}
       <div className="crm-lists">
-        {LISTS.map((list) => (
+        <button
+          className={`crm-list-tab ${activeList === 'all' ? 'crm-list-tab--active' : ''}`}
+          onClick={() => { setActiveList('all'); clearFilters(); }}
+        >
+          All
+        </button>
+        {customLists.map((list) => (
           <button
             key={list.id}
             className={`crm-list-tab ${activeList === list.id ? 'crm-list-tab--active' : ''}`}
-            onClick={() => setActiveList(list.id)}
+            onClick={() => { setActiveList(list.id); setActiveFilters({ statuses: [], tags: [] }); }}
           >
             {list.name}
+            <span
+              className="crm-list-tab-delete"
+              onClick={(e) => { e.stopPropagation(); handleDeleteList(list.id); }}
+              title="Delete list"
+            >
+              <X size={12} />
+            </span>
           </button>
         ))}
-        <button
-          className="crm-list-tab crm-list-tab--create"
-          onClick={() => csvInputRef.current?.click()}
-          disabled={csvImporting}
-        >
-          {csvImporting ? <Loader2 size={14} className="crm-spin" /> : <Upload size={14} />}
-          {csvImporting ? 'Importing...' : 'Import CSV'}
-        </button>
-        <input
-          ref={csvInputRef}
-          type="file"
-          accept=".csv"
-          style={{ display: 'none' }}
-          onChange={handleCsvImport}
-        />
-        <button
-          className="crm-list-tab crm-list-tab--create"
-          onClick={handleSync}
-          disabled={syncing}
-        >
-          {syncing ? <Loader2 size={14} className="crm-spin" /> : <RefreshCw size={14} />}
-          {syncing ? 'Syncing...' : 'Sync Contacts'}
+        <button className="crm-list-tab crm-list-tab--create" onClick={() => setShowCreateList(true)}>
+          <Plus size={14} />
+          Create a new list
         </button>
       </div>
+      <input
+        ref={csvInputRef}
+        type="file"
+        accept=".csv"
+        style={{ display: 'none' }}
+        onChange={handleCsvImport}
+      />
+
+      {/* Create List Modal */}
+      {showCreateList && (
+        <>
+          <div className="crm-modal-overlay" onClick={() => setShowCreateList(false)} />
+          <div className="crm-modal">
+            <div className="crm-modal-header">
+              <h3 className="crm-modal-title">Create a New List</h3>
+              <button className="crm-modal-close" onClick={() => setShowCreateList(false)}><X size={16} /></button>
+            </div>
+            <div className="crm-modal-body">
+              <div className="crm-modal-field">
+                <label className="crm-modal-label">List Name</label>
+                <input
+                  className="crm-modal-input"
+                  placeholder="e.g. Hot Leads, VIP Clients"
+                  value={listForm.name}
+                  onChange={(e) => setListForm(f => ({ ...f, name: e.target.value }))}
+                  autoFocus
+                />
+              </div>
+              <div className="crm-modal-field">
+                <label className="crm-modal-label">Filter by Status</label>
+                <div className="crm-modal-checks">
+                  {STATUSES.map((s) => (
+                    <button
+                      key={s}
+                      className={`crm-modal-check-btn ${listForm.statuses.includes(s) ? 'crm-modal-check-btn--active' : ''}`}
+                      onClick={() => setListForm(f => ({
+                        ...f,
+                        statuses: f.statuses.includes(s) ? f.statuses.filter(x => x !== s) : [...f.statuses, s],
+                      }))}
+                    >
+                      {listForm.statuses.includes(s) && <Check size={13} />}
+                      <span className="crm-status" style={{ background: STATUS_COLORS[s].bg, color: STATUS_COLORS[s].color }}>{s}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {allTags.length > 0 && (
+                <div className="crm-modal-field">
+                  <label className="crm-modal-label">Filter by Tags</label>
+                  <div className="crm-modal-checks">
+                    {allTags.map((t) => (
+                      <button
+                        key={t}
+                        className={`crm-modal-check-btn ${listForm.tags.includes(t) ? 'crm-modal-check-btn--active' : ''}`}
+                        onClick={() => setListForm(f => ({
+                          ...f,
+                          tags: f.tags.includes(t) ? f.tags.filter(x => x !== t) : [...f.tags, t],
+                        }))}
+                      >
+                        {listForm.tags.includes(t) && <Check size={13} />}
+                        <span className="crm-tag">{t}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <p className="crm-modal-hint">
+                {listForm.statuses.length === 0 && listForm.tags.length === 0
+                  ? 'No filters selected — list will show all contacts.'
+                  : `Will show contacts matching ${[
+                      listForm.statuses.length > 0 ? `status: ${listForm.statuses.join(', ')}` : '',
+                      listForm.tags.length > 0 ? `tags: ${listForm.tags.join(', ')}` : '',
+                    ].filter(Boolean).join(' and ')}.`
+                }
+              </p>
+            </div>
+            <div className="crm-modal-footer">
+              <button className="crm-modal-cancel" onClick={() => setShowCreateList(false)}>Cancel</button>
+              <button className="crm-modal-save" onClick={handleCreateList} disabled={!listForm.name.trim()}>Create List</button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Add contact inline form */}
       {addingContact && (
@@ -322,10 +494,51 @@ export default function CRM() {
       {/* Toolbar */}
       <div className="crm-toolbar">
         <div className="crm-toolbar-left">
-          <button className="crm-pill">
-            <Filter size={14} />
-            Filters
-          </button>
+          <div className="crm-filter-wrap" ref={filterRef}>
+            <button
+              className={`crm-pill ${hasActiveFilters ? 'crm-pill--active' : ''}`}
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              <Filter size={14} />
+              Filters
+              {hasActiveFilters && <span className="crm-filter-count">{effectiveFilters.statuses.length + effectiveFilters.tags.length}</span>}
+            </button>
+            {showFilters && (
+              <div className="crm-filter-dropdown">
+                <div className="crm-filter-section">
+                  <span className="crm-filter-section-label">Status</span>
+                  {STATUSES.map((s) => (
+                    <button
+                      key={s}
+                      className={`crm-filter-option ${activeFilters.statuses.includes(s) ? 'crm-filter-option--active' : ''}`}
+                      onClick={() => toggleFilterStatus(s)}
+                    >
+                      <span className="crm-filter-check">{activeFilters.statuses.includes(s) && <Check size={12} />}</span>
+                      <span className="crm-status" style={{ background: STATUS_COLORS[s].bg, color: STATUS_COLORS[s].color }}>{s}</span>
+                    </button>
+                  ))}
+                </div>
+                {allTags.length > 0 && (
+                  <div className="crm-filter-section">
+                    <span className="crm-filter-section-label">Tags</span>
+                    {allTags.map((t) => (
+                      <button
+                        key={t}
+                        className={`crm-filter-option ${activeFilters.tags.includes(t) ? 'crm-filter-option--active' : ''}`}
+                        onClick={() => toggleFilterTag(t)}
+                      >
+                        <span className="crm-filter-check">{activeFilters.tags.includes(t) && <Check size={12} />}</span>
+                        <span className="crm-tag">{t}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {hasActiveFilters && !activeListObj && (
+                  <button className="crm-filter-clear" onClick={clearFilters}>Clear all filters</button>
+                )}
+              </div>
+            )}
+          </div>
           <button className="crm-pill">
             <ArrowUpDown size={14} />
             Sort
@@ -350,6 +563,22 @@ export default function CRM() {
               Search Contacts
             </button>
           )}
+          <button
+            className="crm-pill"
+            onClick={() => csvInputRef.current?.click()}
+            disabled={csvImporting}
+          >
+            {csvImporting ? <Loader2 size={14} className="crm-spin" /> : <Upload size={14} />}
+            {csvImporting ? 'Importing...' : 'Import CSV'}
+          </button>
+          <button
+            className="crm-pill"
+            onClick={handleSync}
+            disabled={syncing}
+          >
+            {syncing ? <Loader2 size={14} className="crm-spin" /> : <RefreshCw size={14} />}
+            {syncing ? 'Syncing...' : 'Sync'}
+          </button>
           <button className="crm-add-contact-btn" onClick={() => setAddingContact(true)}>
             <UserPlus size={15} />
             <span className="crm-add-contact-label">Add Contact</span>

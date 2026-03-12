@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, X, Upload, Trash2, ChevronDown, Check, Link2, Copy, CheckCheck, RefreshCw, Loader2 } from 'lucide-react';
-import { getProducts, createProduct, updateProduct as updateProductApi, deleteProduct as deleteProductApi, regeneratePaymentLink } from '../lib/api';
+import { Plus, X, Upload, Trash2, ChevronDown, Check, Link2, Copy, CheckCheck, RefreshCw, Loader2, ExternalLink, ShoppingBag } from 'lucide-react';
+import { getProducts, getImportedProducts, createProduct, updateProduct as updateProductApi, deleteProduct as deleteProductApi, regeneratePaymentLink } from '../lib/api';
 import './Pages.css';
 import './Products.css';
 
@@ -11,6 +11,7 @@ export const INITIAL_PRODUCTS = [];
 
 export default function Products() {
   const [products, setProducts] = useState([]);
+  const [importedProducts, setImportedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [addingNew, setAddingNew] = useState(false);
@@ -29,13 +30,17 @@ export default function Products() {
   async function loadProducts() {
     setLoading(true);
     try {
-      const { products: data } = await getProducts();
+      const [{ products: data }, { products: imported }] = await Promise.all([
+        getProducts(),
+        getImportedProducts(),
+      ]);
       setProducts(data.map(p => ({
         ...p,
         price: (p.price_cents / 100).toString(),
         priceMode: p.price_mode === 'monthly' ? 'Monthly' : 'One-time',
         photos: p.photos || [],
       })));
+      setImportedProducts(imported);
     } catch (err) {
       console.error('Failed to load products:', err);
     }
@@ -382,8 +387,6 @@ export default function Products() {
                 { value: 'none', label: 'No Payment Link' },
                 { value: 'stripe', label: 'Stripe', logo: '/stripe-logo.png' },
                 { value: 'whop', label: 'Whop', logo: '/whop-logo.svg' },
-                { value: 'shopify', label: 'Shopify', logo: '/shopify-logo.png' },
-                { value: 'kajabi', label: 'Kajabi', logo: '/kajabi-logo.png' },
               ].map((opt) => (
                 <button
                   key={opt.value}
@@ -424,84 +427,160 @@ export default function Products() {
         </div>
       )}
 
-      {/* Product List */}
-      <div className="products-grid">
-        {products.map((product) => {
-          const isEditing = editingId === product.id;
-          return (
-            <div key={product.id} className="products-card">
-              {renderPhotoSection(product.id, product.photos)}
+      {/* Your Products (Stripe / Whop / Manual) */}
+      {products.length > 0 && (
+        <>
+          {importedProducts.length > 0 && <h2 className="products-section-title">Your Products</h2>}
+          <div className="products-grid">
+            {products.map((product) => {
+              const isEditing = editingId === product.id;
+              return (
+                <div key={product.id} className="products-card">
+                  {renderPhotoSection(product.id, product.photos)}
 
-              <div className="products-field">
-                <label className="products-label">Name</label>
-                {isEditing ? (
-                  <input
-                    type="text"
-                    className="products-input"
-                    value={product.name}
-                    onChange={(e) => updateProduct(product.id, 'name', e.target.value)}
-                  />
-                ) : (
-                  <p className="products-value">{product.name}</p>
-                )}
-              </div>
+                  <div className="products-field">
+                    <label className="products-label">Name</label>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        className="products-input"
+                        value={product.name}
+                        onChange={(e) => updateProduct(product.id, 'name', e.target.value)}
+                      />
+                    ) : (
+                      <p className="products-value">{product.name}</p>
+                    )}
+                  </div>
 
-              <div className="products-field">
-                <label className="products-label">Description</label>
-                {isEditing ? (
-                  <textarea
-                    className="products-textarea"
-                    value={product.description}
-                    onChange={(e) => updateProduct(product.id, 'description', e.target.value)}
-                    rows={3}
-                  />
-                ) : (
-                  <p className="products-value products-value--desc">{product.description || 'No description'}</p>
-                )}
-              </div>
+                  <div className="products-field">
+                    <label className="products-label">Description</label>
+                    {isEditing ? (
+                      <textarea
+                        className="products-textarea"
+                        value={product.description}
+                        onChange={(e) => updateProduct(product.id, 'description', e.target.value)}
+                        rows={3}
+                      />
+                    ) : (
+                      <p className="products-value products-value--desc">{product.description || 'No description'}</p>
+                    )}
+                  </div>
 
-              <div className="products-field">
-                <label className="products-label">Product Type</label>
-                {isEditing ? (
-                  renderTypeDropdown(product.id, product.type, (type) => updateProduct(product.id, 'type', type))
-                ) : (
-                  <span className="products-type-badge">{product.type}</span>
-                )}
-              </div>
+                  <div className="products-field">
+                    <label className="products-label">Product Type</label>
+                    {isEditing ? (
+                      renderTypeDropdown(product.id, product.type, (type) => updateProduct(product.id, 'type', type))
+                    ) : (
+                      <span className="products-type-badge">{product.type}</span>
+                    )}
+                  </div>
 
-              <div className="products-field">
-                <label className="products-label">Pricing</label>
-                <p className="products-value products-price-display">
-                  ${Number(product.price).toLocaleString()}
-                  {product.priceMode === 'Monthly' && <span className="products-price-suffix-text">/mo</span>}
-                </p>
-              </div>
+                  <div className="products-field">
+                    <label className="products-label">Pricing</label>
+                    <p className="products-value products-price-display">
+                      ${Number(product.price).toLocaleString()}
+                      {product.priceMode === 'Monthly' && <span className="products-price-suffix-text">/mo</span>}
+                    </p>
+                  </div>
 
-              {product.payment_processor && product.payment_processor !== 'none' && (
-                <div className="products-field">
-                  <label className="products-label">Payment Processor</label>
-                  <span className="products-type-badge">{product.payment_processor.charAt(0).toUpperCase() + product.payment_processor.slice(1)}</span>
+                  {product.payment_processor && product.payment_processor !== 'none' && (
+                    <div className="products-field">
+                      <label className="products-label">Payment Processor</label>
+                      <span className="products-type-badge">{product.payment_processor.charAt(0).toUpperCase() + product.payment_processor.slice(1)}</span>
+                    </div>
+                  )}
+
+                  {renderPaymentLink(product)}
+
+                  <div className="products-card-actions">
+                    {isEditing ? (
+                      <button className="products-edit-btn" onClick={() => handleSaveEdit(product)} disabled={saving}>
+                        {saving ? 'Saving...' : 'Save'}
+                      </button>
+                    ) : (
+                      <button className="products-edit-btn" onClick={() => setEditingId(product.id)}>Edit</button>
+                    )}
+                    <button className="products-delete-btn" onClick={() => handleDelete(product.id)}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
-              )}
+              );
+            })}
+          </div>
+        </>
+      )}
 
-              {renderPaymentLink(product)}
-
-              <div className="products-card-actions">
-                {isEditing ? (
-                  <button className="products-edit-btn" onClick={() => handleSaveEdit(product)} disabled={saving}>
-                    {saving ? 'Saving...' : 'Save'}
-                  </button>
-                ) : (
-                  <button className="products-edit-btn" onClick={() => setEditingId(product.id)}>Edit</button>
+      {/* Imported Products (Shopify / Kajabi) */}
+      {importedProducts.length > 0 && (
+        <>
+          <h2 className="products-section-title">
+            <ShoppingBag size={18} />
+            Imported Products
+          </h2>
+          <div className="products-grid">
+            {importedProducts.map((product) => (
+              <div key={product.id} className="products-card products-card--imported">
+                {product.image_url && (
+                  <div className="products-imported-image">
+                    <img src={product.image_url} alt={product.name} />
+                  </div>
                 )}
-                <button className="products-delete-btn" onClick={() => handleDelete(product.id)}>
-                  <Trash2 size={14} />
-                </button>
+
+                <div className="products-field">
+                  <label className="products-label">Name</label>
+                  <p className="products-value">{product.name}</p>
+                </div>
+
+                {product.description && (
+                  <div className="products-field">
+                    <label className="products-label">Description</label>
+                    <p className="products-value products-value--desc">{product.description}</p>
+                  </div>
+                )}
+
+                {product.price != null && (
+                  <div className="products-field">
+                    <label className="products-label">Price</label>
+                    <p className="products-value products-price-display">${Number(product.price).toLocaleString()}</p>
+                  </div>
+                )}
+
+                <div className="products-field">
+                  <label className="products-label">Source</label>
+                  <div className="products-source-badge">
+                    <img
+                      src={product.provider === 'shopify' ? '/shopify-logo.png' : '/kajabi-logo.png'}
+                      alt=""
+                      className="products-processor-logo"
+                    />
+                    <span>{product.provider === 'shopify' ? 'Shopify' : 'Kajabi'}</span>
+                  </div>
+                </div>
+
+                <div className="products-field">
+                  <label className="products-label">Status</label>
+                  <span className={`products-status-badge products-status-badge--${product.status}`}>
+                    {product.status}
+                  </span>
+                </div>
+
+                {product.checkout_url && (
+                  <a
+                    href={product.checkout_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="products-external-link"
+                  >
+                    <ExternalLink size={14} />
+                    View on {product.provider === 'shopify' ? 'Shopify' : 'Kajabi'}
+                  </a>
+                )}
               </div>
-            </div>
-          );
-        })}
-      </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

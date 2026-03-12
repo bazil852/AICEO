@@ -895,6 +895,334 @@
   color: #16a34a;
 }
 
+/* ── List tab delete button ── */
+.crm-list-tab-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+  margin-left: 4px;
+}
+
+.crm-list-tab:hover .crm-list-tab-delete {
+  opacity: 1;
+}
+
+.crm-list-tab-delete:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* ── Create List Modal ── */
+.crm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.crm-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 101;
+  width: 480px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 80px);
+  background: var(--bg-white);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.crm-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 0;
+}
+
+.crm-modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.crm-modal-close {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.crm-modal-close:hover {
+  background: #f0f0f2;
+}
+
+.crm-modal-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+
+.crm-modal-field {
+  margin-bottom: 18px;
+}
+
+.crm-modal-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.crm-modal-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border-light);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text-primary);
+  outline: none;
+  background: var(--bg-white);
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.crm-modal-input:focus {
+  border-color: #2563eb;
+}
+
+.crm-modal-input::placeholder {
+  color: var(--text-muted);
+}
+
+.crm-modal-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.crm-modal-check-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1.5px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-white);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  font-family: inherit;
+}
+
+.crm-modal-check-btn:hover {
+  border-color: #c8c8cc;
+}
+
+.crm-modal-check-btn--active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.crm-modal-hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.crm-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-light);
+}
+
+.crm-modal-cancel {
+  padding: 9px 18px;
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.crm-modal-cancel:hover {
+  background: #f5f5f7;
+}
+
+.crm-modal-save {
+  padding: 9px 18px;
+  background: #2563eb;
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.crm-modal-save:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.crm-modal-save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Filter Dropdown ── */
+.crm-filter-wrap {
+  position: relative;
+}
+
+.crm-pill--active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.crm-filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 50px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.crm-filter-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 240px;
+  background: var(--bg-white);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+  z-index: 20;
+}
+
+.crm-filter-section {
+  padding: 4px 0;
+}
+
+.crm-filter-section + .crm-filter-section {
+  border-top: 1px solid var(--border-light);
+  margin-top: 4px;
+  padding-top: 8px;
+}
+
+.crm-filter-section-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 4px 8px;
+}
+
+.crm-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.crm-filter-option:hover {
+  background: #f5f5f7;
+}
+
+.crm-filter-option--active {
+  background: #eff6ff;
+}
+
+.crm-filter-check {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-light);
+  flex-shrink: 0;
+  color: #2563eb;
+}
+
+.crm-filter-option--active .crm-filter-check {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.crm-filter-clear {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-top: 1px solid var(--border-light);
+  background: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #dc2626;
+  cursor: pointer;
+  text-align: center;
+  margin-top: 4px;
+  border-radius: 0 0 8px 8px;
+  transition: background 0.1s;
+}
+
+.crm-filter-clear:hover {
+  background: #fef2f2;
+}
+
 /* ── Spinner ── */
 @keyframes crm-spin {
   to { transform: rotate(360deg); }

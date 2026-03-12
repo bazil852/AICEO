@@ -1,18 +1,20 @@
 import { useState, useRef } from 'react';
-import { X, Copy, Send, Check, Mail, Code, FileText, PenTool, ChevronLeft } from 'lucide-react';
+import { X, Copy, Send, Check, Mail, Code, FileText, PenTool, ChevronLeft, Rocket } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import DOMPurify from 'dompurify';
 import { ARTIFACT_TYPES, parseEmailContent } from '../lib/artifacts';
-import { sendEmailApi } from '../lib/api';
+import { sendEmailApi, deployToNetlify } from '../lib/api';
 import './ArtifactPanel.css';
 
-export default function ArtifactPanel({ artifact, emailAccounts, onClose }) {
+export default function ArtifactPanel({ artifact, emailAccounts, onClose, onChatMessage }) {
   const [copied, setCopied] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [sendError, setSendError] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState(emailAccounts?.[0]?.id || null);
+  const [deploying, setDeploying] = useState(false);
+  const [deployResult, setDeployResult] = useState(null);
   const iframeRef = useRef(null);
 
   if (!artifact) return null;
@@ -24,6 +26,27 @@ export default function ArtifactPanel({ artifact, emailAccounts, onClose }) {
     await navigator.clipboard.writeText(text || content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDeploy = async () => {
+    if (deploying) return;
+    setDeploying(true);
+    setDeployResult(null);
+    setSendError('');
+    try {
+      const result = await deployToNetlify(content);
+      setDeployResult(result);
+      if (onChatMessage) {
+        onChatMessage(`Deployed to Netlify! Your page is live at ${result.url}`);
+      }
+    } catch (err) {
+      setSendError(err.message);
+      if (onChatMessage) {
+        onChatMessage(`Deploy failed: ${err.message}`);
+      }
+    } finally {
+      setDeploying(false);
+    }
   };
 
   const handleSendEmail = async () => {
@@ -88,6 +111,20 @@ export default function ArtifactPanel({ artifact, emailAccounts, onClose }) {
                 {sent ? <><Check size={14} /> Sent</> : sending ? 'Sending...' : <><Send size={14} /> Send</>}
               </button>
             </>
+          )}
+          {type === 'html_template' && (
+            <button
+              className={`ap-btn ${deployResult ? 'ap-btn--deploy-done' : 'ap-btn--deploy'}`}
+              onClick={handleDeploy}
+              disabled={deploying || !!deployResult}
+            >
+              {deployResult ? <><Check size={14} /> Live</> : deploying ? 'Deploying...' : <><Rocket size={14} /> Deploy</>}
+            </button>
+          )}
+          {deployResult && (
+            <a href={deployResult.url} target="_blank" rel="noopener noreferrer" className="ap-btn ap-btn--outline ap-deploy-link">
+              {deployResult.url.replace('https://', '')}
+            </a>
           )}
           {type !== 'email' && (
             <button className="ap-btn ap-btn--outline" onClick={() => handleCopy()}>

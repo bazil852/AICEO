@@ -103,6 +103,7 @@ export default function Inbox() {
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(null); // { synced: N } or null
 
   // Add account modal
   const [accountForm, setAccountForm] = useState({ provider: 'gmail', email: '', display_name: '', username: '', password: '', imap_host: '', imap_port: 993, smtp_host: '', smtp_port: 465 });
@@ -256,19 +257,34 @@ export default function Inbox() {
       } else {
         showToast('Email account connected');
       }
-      // Auto-sync the new account
+      // Auto-sync the new account — poll for progress while syncing
       const newAcc = accs[accs.length - 1];
       if (newAcc) {
         setSyncing(true);
+        setSyncProgress({ synced: 0 });
+        // Poll every 2s to show emails as they arrive
+        const pollId = setInterval(async () => {
+          try {
+            await loadEmails(activeFolder, searchQuery, selectedAccountId);
+            await loadCounts(selectedAccountId);
+            setSyncProgress((prev) => {
+              const count = emails.length;
+              return count > (prev?.synced || 0) ? { synced: count } : prev;
+            });
+          } catch {}
+        }, 2000);
         try {
           const syncResult = await syncEmailAccount(newAcc.id);
-          showToast(`Synced ${syncResult.synced} emails`);
+          clearInterval(pollId);
           await loadEmails(activeFolder, searchQuery, selectedAccountId);
           await loadCounts(selectedAccountId);
+          showToast(`Synced ${syncResult.synced} emails`);
         } catch (err) {
+          clearInterval(pollId);
           showToast(err.message, 'error');
         }
         setSyncing(false);
+        setSyncProgress(null);
       }
     } catch (err) {
       setAccountError(err.message);
@@ -279,6 +295,14 @@ export default function Inbox() {
   const handleSync = async () => {
     if (accounts.length === 0) return;
     setSyncing(true);
+    setSyncProgress({ synced: 0 });
+    // Poll every 2s so user sees emails appearing
+    const pollId = setInterval(async () => {
+      try {
+        await loadEmails(activeFolder, searchQuery, selectedAccountId);
+        await loadCounts(selectedAccountId);
+      } catch {}
+    }, 2000);
     try {
       let totalSynced = 0;
       for (const acc of accounts) {
@@ -286,13 +310,16 @@ export default function Inbox() {
         const result = await syncEmailAccount(acc.id);
         totalSynced += result.synced;
       }
-      showToast(`Synced ${totalSynced} new emails`);
+      clearInterval(pollId);
       await loadEmails(activeFolder, searchQuery, selectedAccountId);
       await loadCounts(selectedAccountId);
+      showToast(`Synced ${totalSynced} new emails`);
     } catch (err) {
+      clearInterval(pollId);
       showToast(err.message, 'error');
     }
     setSyncing(false);
+    setSyncProgress(null);
   };
 
   // ── Email actions ──
@@ -593,9 +620,16 @@ export default function Inbox() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
             {hasAccounts && (
-              <button className={`inbox-sync-btn ${syncing ? 'inbox-sync-btn--spinning' : ''}`} onClick={handleSync} title="Sync emails" disabled={syncing}>
-                <RefreshCw size={14} />
-              </button>
+              <>
+                <button className={`inbox-sync-btn ${syncing ? 'inbox-sync-btn--spinning' : ''}`} onClick={handleSync} title="Sync emails" disabled={syncing}>
+                  <RefreshCw size={14} />
+                </button>
+                {syncing && (
+                  <span style={{ fontSize: 11, color: '#888', marginLeft: 6, whiteSpace: 'nowrap' }}>
+                    Syncing... {emails.length > 0 ? `${emails.length} emails` : ''}
+                  </span>
+                )}
+              </>
             )}
           </div>
 

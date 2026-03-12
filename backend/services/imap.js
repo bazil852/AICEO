@@ -34,7 +34,7 @@ function createClient(account) {
 /**
  * Connect to an IMAP server and fetch emails.
  */
-export async function fetchEmails(account, { folder = 'INBOX', limit = 50, since } = {}) {
+export async function fetchEmails(account, { folder = 'INBOX', limit = 50, since, latest = false } = {}) {
   const client = createClient(account);
   const emails = [];
 
@@ -43,14 +43,23 @@ export async function fetchEmails(account, { folder = 'INBOX', limit = 50, since
 
     const lock = await client.getMailboxLock(folder);
     try {
-      const searchCriteria = since ? { since } : 'ALL';
+      // For initial sync (latest=true), fetch the N most recent messages by sequence number
+      let searchCriteria;
+      if (latest && client.mailbox?.exists > 0) {
+        const total = client.mailbox.exists;
+        const start = Math.max(1, total - limit + 1);
+        searchCriteria = `${start}:*`;
+      } else {
+        searchCriteria = since ? { since } : 'ALL';
+      }
+
       const messages = client.fetch(searchCriteria, {
         envelope: true,
         source: true,
         uid: true,
         flags: true,
         bodyStructure: true,
-      }, { uid: true });
+      }, { uid: !latest });
 
       let count = 0;
       for await (const msg of messages) {

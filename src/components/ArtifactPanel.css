@@ -102,6 +102,43 @@
   cursor: default;
 }
 
+.ap-btn--deploy {
+  background: #00c7b7;
+  color: white;
+}
+
+.ap-btn--deploy:hover:not(:disabled) {
+  background: #00b3a4;
+}
+
+.ap-btn--deploy:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ap-btn--deploy-done {
+  background: #059669;
+  color: white;
+}
+
+.ap-btn--deploy-done:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.ap-deploy-link {
+  font-size: 12px !important;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: none;
+  color: #00c7b7 !important;
+}
+
+.ap-deploy-link:hover {
+  text-decoration: underline;
+}
+
 .ap-close {
   width: 32px;
   height: 32px;
