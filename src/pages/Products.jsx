@@ -442,12 +442,9 @@ export default function Products() {
         </div>
       )}
 
-      {/* Your Products (Stripe / Whop / Manual) */}
-      {products.length > 0 && (
-        <>
-          {importedProducts.length > 0 && <h2 className="products-section-title">Your Products</h2>}
-          <div className="products-grid">
-            {products.map((product) => {
+      {/* Product List */}
+      <div className="products-grid">
+        {products.map((product) => {
               const isEditing = editingId === product.id;
               return (
                 <div key={product.id} className="products-card">
