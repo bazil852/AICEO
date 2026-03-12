@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { Mail, Lock, CreditCard, Zap, Check, X, Copy, Upload, Trash2, ChevronRight, FileText, Loader } from 'lucide-react';
 import ColorWheelPicker from '../components/ColorWheelPicker';
 import FontSelector from '../components/FontSelector';
-import { uploadBrandDnaFiles, uploadContextFiles, getIntegrations, connectIntegration, disconnectIntegration, getEmailAccounts, addEmailAccount } from '../lib/api';
+import { uploadBrandDnaFiles, uploadContextFiles, getIntegrations, connectIntegration, disconnectIntegration, getEmailAccounts, addEmailAccount, deleteEmailAccount } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import './Pages.css';
 import './Settings.css';
@@ -50,6 +50,27 @@ export default function Settings() {
   const [kajabiStep, setKajabiStep] = useState(1);
   const [kajabiWebhook, setKajabiWebhook] = useState({ url: '', secret: '' });
   const [emailForm, setEmailForm] = useState({ email: '', senderName: '', username: '', password: '', imapHost: '', imapPort: '993', smtpHost: '', smtpPort: '587' });
+
+  // Auto-detect email provider settings from email address
+  const EMAIL_PRESETS = {
+    'gmail.com': { imapHost: 'imap.gmail.com', imapPort: '993', smtpHost: 'smtp.gmail.com', smtpPort: '587', label: 'Gmail' },
+    'googlemail.com': { imapHost: 'imap.gmail.com', imapPort: '993', smtpHost: 'smtp.gmail.com', smtpPort: '587', label: 'Gmail' },
+    'outlook.com': { imapHost: 'outlook.office365.com', imapPort: '993', smtpHost: 'smtp-mail.outlook.com', smtpPort: '587', label: 'Outlook' },
+    'hotmail.com': { imapHost: 'outlook.office365.com', imapPort: '993', smtpHost: 'smtp-mail.outlook.com', smtpPort: '587', label: 'Outlook' },
+    'live.com': { imapHost: 'outlook.office365.com', imapPort: '993', smtpHost: 'smtp-mail.outlook.com', smtpPort: '587', label: 'Outlook' },
+    'yahoo.com': { imapHost: 'imap.mail.yahoo.com', imapPort: '993', smtpHost: 'smtp.mail.yahoo.com', smtpPort: '587', label: 'Yahoo' },
+    'icloud.com': { imapHost: 'imap.mail.me.com', imapPort: '993', smtpHost: 'smtp.mail.me.com', smtpPort: '587', label: 'iCloud' },
+    'zoho.com': { imapHost: 'imap.zoho.com', imapPort: '993', smtpHost: 'smtp.zoho.com', smtpPort: '587', label: 'Zoho' },
+  };
+  const handleEmailChange = (email) => {
+    const domain = (email.split('@')[1] || '').toLowerCase();
+    const preset = EMAIL_PRESETS[domain];
+    if (preset) {
+      setEmailForm(f => ({ ...f, email, username: email, imapHost: preset.imapHost, imapPort: preset.imapPort, smtpHost: preset.smtpHost, smtpPort: preset.smtpPort }));
+    } else {
+      setEmailForm(f => ({ ...f, email, username: email }));
+    }
+  };
 
   // Brand DNA
   const [brandDnaCreated, setBrandDnaCreated] = useState(false);
@@ -184,7 +205,7 @@ export default function Settings() {
     setFirefliesWebhook({ url: '', secret: '' });
     setShopifyWebhook({ url: '', secret: '' });
     setKajabiWebhook({ url: '', secret: '' });
-    setEmailForm({ email: '', senderName: '', username: '', password: '', imapHost: '', imapPort: '993', smtpHost: '', smtpPort: '587' });
+    setEmailForm({ email: '', senderName: '', username: '', password: '' });
     setModalOpen(id);
   };
 
@@ -207,7 +228,15 @@ export default function Settings() {
 
   const handleDisconnect = async (id) => {
     try {
-      await disconnectIntegration(id);
+      if (id === 'email') {
+        // Email uses separate email-accounts API
+        const { accounts } = await getEmailAccounts();
+        if (accounts?.length) {
+          await Promise.all(accounts.map((a) => deleteEmailAccount(a.id)));
+        }
+      } else {
+        await disconnectIntegration(id);
+      }
       setIntegrations((prev) => {
         const next = { ...prev };
         delete next[id];
@@ -1252,7 +1281,7 @@ export default function Settings() {
 
                 <div className="modal-field">
                   <label className="modal-label">Email address</label>
-                  <input type="email" className="modal-input" placeholder="you@example.com" value={emailForm.email} onChange={(e) => setEmailForm(f => ({ ...f, email: e.target.value }))} />
+                  <input type="email" className="modal-input" placeholder="you@example.com" value={emailForm.email} onChange={(e) => handleEmailChange(e.target.value)} />
                 </div>
                 <div className="modal-field">
                   <label className="modal-label">Sender Name</label>

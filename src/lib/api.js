@@ -330,6 +330,13 @@ export async function getProducts() {
   return res.json();
 }
 
+export async function getImportedProducts() {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_URL}/api/products/imported`, { headers });
+  if (!res.ok) return { products: [] };
+  return res.json();
+}
+
 export async function createProduct(data) {
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_URL}/api/products`, {
@@ -486,24 +493,11 @@ export async function deleteEmailAccount(id) {
 }
 
 export async function syncEmailAccount(id) {
-  // Sync via Supabase Edge Function (bypasses Railway IMAP blocking)
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
-  if (!token) throw new Error('Not authenticated');
-
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-  const res = await fetch(`${supabaseUrl}/functions/v1/sync-email`, {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_URL}/api/email-accounts/${id}/sync`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'apikey': anonKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ account_id: id }),
+    headers,
   });
-
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Sync failed' }));
     throw new Error(err.error);

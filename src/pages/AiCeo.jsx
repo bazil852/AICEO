@@ -999,6 +999,7 @@ export default function AiCeo() {
               artifact={artifact}
               emailAccounts={emailAccounts}
               onClose={() => setPanelOpen(false)}
+              onChatMessage={(text) => setMessages(prev => [...prev, { id: `msg-${Date.now()}`, role: 'assistant', content: text }])}
             />
           </div>
         )}
@@ -1012,6 +1013,7 @@ export default function AiCeo() {
             artifact={artifact}
             emailAccounts={emailAccounts}
             onClose={() => setMobileArtifactOpen(false)}
+            onChatMessage={(text) => setMessages(prev => [...prev, { id: `msg-${Date.now()}`, role: 'assistant', content: text }])}
           />
         </div>
       )}

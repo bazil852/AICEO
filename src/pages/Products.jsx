@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, X, Upload, Trash2, ChevronDown, Check, Link2, Copy, CheckCheck, RefreshCw, Loader2 } from 'lucide-react';
-import { getProducts, createProduct, updateProduct as updateProductApi, deleteProduct as deleteProductApi, regeneratePaymentLink } from '../lib/api';
+import { Plus, X, Upload, Trash2, ChevronDown, Check, Link2, Copy, CheckCheck, RefreshCw, Loader2, ExternalLink, ShoppingBag } from 'lucide-react';
+import { getProducts, getImportedProducts, createProduct, updateProduct as updateProductApi, deleteProduct as deleteProductApi, regeneratePaymentLink } from '../lib/api';
 import './Pages.css';
 import './Products.css';
 
@@ -11,6 +11,7 @@ export const INITIAL_PRODUCTS = [];
 
 export default function Products() {
   const [products, setProducts] = useState([]);
+  const [importedProducts, setImportedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [addingNew, setAddingNew] = useState(false);
@@ -32,13 +33,17 @@ export default function Products() {
   async function loadProducts() {
     setLoading(true);
     try {
-      const { products: data } = await getProducts();
+      const [{ products: data }, { products: imported }] = await Promise.all([
+        getProducts(),
+        getImportedProducts(),
+      ]);
       setProducts(data.map(p => ({
         ...p,
         price: (p.price_cents / 100).toString(),
         priceMode: p.price_mode === 'monthly' ? 'Monthly' : 'One-time',
         photos: p.photos || [],
       })));
+      setImportedProducts(imported);
     } catch (err) {
       console.error('Failed to load products:', err);
     }
@@ -397,8 +402,6 @@ export default function Products() {
                 { value: 'none', label: 'No Payment Link' },
                 { value: 'stripe', label: 'Stripe', logo: '/stripe-logo.png' },
                 { value: 'whop', label: 'Whop', logo: '/whop-logo.svg' },
-                { value: 'shopify', label: 'Shopify', logo: '/shopify-logo.png' },
-                { value: 'kajabi', label: 'Kajabi', logo: '/kajabi-logo.png' },
               ].map((opt) => (
                 <button
                   key={opt.value}
@@ -439,67 +442,70 @@ export default function Products() {
         </div>
       )}
 
-      {/* Product List */}
-      <div className="products-grid">
-        {products.map((product) => {
-          const isEditing = editingId === product.id;
-          return (
-            <div key={product.id} className="products-card">
-              {renderPhotoSection(product.id, product.photos)}
+      {/* Your Products (Stripe / Whop / Manual) */}
+      {products.length > 0 && (
+        <>
+          {importedProducts.length > 0 && <h2 className="products-section-title">Your Products</h2>}
+          <div className="products-grid">
+            {products.map((product) => {
+              const isEditing = editingId === product.id;
+              return (
+                <div key={product.id} className="products-card">
+                  {renderPhotoSection(product.id, product.photos)}
 
-              <div className="products-field">
-                <label className="products-label">Name</label>
-                {isEditing ? (
-                  <input
-                    type="text"
-                    className="products-input"
-                    value={product.name}
-                    onChange={(e) => updateProduct(product.id, 'name', e.target.value)}
-                  />
-                ) : (
-                  <p className="products-value">{product.name}</p>
-                )}
-              </div>
+                  <div className="products-field">
+                    <label className="products-label">Name</label>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        className="products-input"
+                        value={product.name}
+                        onChange={(e) => updateProduct(product.id, 'name', e.target.value)}
+                      />
+                    ) : (
+                      <p className="products-value">{product.name}</p>
+                    )}
+                  </div>
 
-              <div className="products-field">
-                <label className="products-label">Description</label>
-                {isEditing ? (
-                  <textarea
-                    className="products-textarea"
-                    value={product.description}
-                    onChange={(e) => updateProduct(product.id, 'description', e.target.value)}
-                    rows={3}
-                  />
-                ) : (
-                  <p className="products-value products-value--desc">{product.description || 'No description'}</p>
-                )}
-              </div>
+                  <div className="products-field">
+                    <label className="products-label">Description</label>
+                    {isEditing ? (
+                      <textarea
+                        className="products-textarea"
+                        value={product.description}
+                        onChange={(e) => updateProduct(product.id, 'description', e.target.value)}
+                        rows={3}
+                      />
+                    ) : (
+                      <p className="products-value products-value--desc">{product.description || 'No description'}</p>
+                    )}
+                  </div>
 
-              <div className="products-field">
-                <label className="products-label">Product Type</label>
-                {isEditing ? (
-                  renderTypeDropdown(product.id, product.type, (type) => updateProduct(product.id, 'type', type))
-                ) : (
-                  <span className="products-type-badge">{product.type}</span>
-                )}
-              </div>
+                  <div className="products-field">
+                    <label className="products-label">Product Type</label>
+                    {isEditing ? (
+                      renderTypeDropdown(product.id, product.type, (type) => updateProduct(product.id, 'type', type))
+                    ) : (
+                      <span className="products-type-badge">{product.type}</span>
+                    )}
+                  </div>
 
-              <div className="products-field">
-                <label className="products-label">Pricing</label>
-                <p className="products-value products-price-display">
-                  ${Number(product.price).toLocaleString()}
-                  {product.priceMode === 'Monthly' && <span className="products-price-suffix-text">/mo</span>}
-                </p>
-              </div>
+                  <div className="products-field">
+                    <label className="products-label">Pricing</label>
+                    <p className="products-value products-price-display">
+                      ${Number(product.price).toLocaleString()}
+                      {product.priceMode === 'Monthly' && <span className="products-price-suffix-text">/mo</span>}
+                    </p>
+                  </div>
 
-              {product.payment_processor && product.payment_processor !== 'none' && (
-                <div className="products-field">
-                  <label className="products-label">Payment Processor</label>
-                  <span className="products-type-badge">{product.payment_processor.charAt(0).toUpperCase() + product.payment_processor.slice(1)}</span>
-                </div>
-              )}
+                  {product.payment_processor && product.payment_processor !== 'none' && (
+                    <div className="products-field">
+                      <label className="products-label">Payment Processor</label>
+                      <span className="products-type-badge">{product.payment_processor.charAt(0).toUpperCase() + product.payment_processor.slice(1)}</span>
+                    </div>
+                  )}
 
-              {renderPaymentLink(product)}
+                  {renderPaymentLink(product)}
 
               <div className="products-card-actions">
                 {isEditing ? (

@@ -74,10 +74,14 @@ router.post('/api/email-accounts', async (req, res) => {
     smtpWarning = `SMTP verification failed — sending may not work: ${err.message}`;
   }
 
+  // Derive provider from IMAP host
+  const hostLower = (account.imap_host || '').toLowerCase();
+  const provider = hostLower.includes('gmail') ? 'gmail' : hostLower.includes('outlook') || hostLower.includes('office365') ? 'outlook' : 'imap';
+
   // Save to DB
   const { data, error } = await supabase.from('email_accounts').insert({
     user_id: userId,
-    provider: 'custom',
+    provider,
     email,
     display_name: display_name || '',
     imap_host: account.imap_host,
@@ -126,14 +130,14 @@ router.post('/api/email-accounts/:id/sync', async (req, res) => {
   if (accErr || !account) return res.status(404).json({ error: 'Account not found' });
 
   try {
-    console.log(`[email] Syncing ${account.email}...`);
+    const isInitialSync = !account.last_synced_at;
+    console.log(`[email] ${isInitialSync ? 'Initial' : 'Incremental'} sync for ${account.email}...`);
 
-    // Determine since date — use last_synced_at or 30 days ago
-    const since = account.last_synced_at
-      ? new Date(account.last_synced_at)
-      : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const fetchOpts = isInitialSync
+      ? { folder: 'INBOX', limit: 100, latest: true }
+      : { folder: 'INBOX', limit: 100, since: new Date(account.last_synced_at) };
 
-    const fetched = await fetchEmails(account, { folder: 'INBOX', limit: 100, since });
+    const fetched = await fetchEmails(account, fetchOpts);
 
     let newCount = 0;
     for (const email of fetched) {

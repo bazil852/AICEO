@@ -110,7 +110,8 @@ export async function fetchRecentVideos(uploadsPlaylistId, count = 50) {
     }
   }
 
-  return videos;
+  // Filter out Shorts (≤ 60 seconds) — only long-form content
+  return videos.filter((v) => v.durationSeconds > 60);
 }
 
 /**

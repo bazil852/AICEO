@@ -20,7 +20,19 @@ FORMAT 2 — GENERATE THE OUTPUT (when you have enough information):
 {"type":"newsletter","html":"<complete HTML code here>"}
 
 FORMAT 3 — GENERATE COVER IMAGE (when user selects a cover image option):
-{"type":"cover_image","prompt":"A hyper-detailed image generation prompt for a newsletter cover. Include: style (photographic/illustration/3D render), exact composition and layout, color palette with hex codes matching the newsletter design, subject matter details, mood and lighting, any text to overlay, designed for 1200x600 email header dimensions."}
+{"type":"cover_image","prompt":"Your extremely detailed image generation prompt here"}
+
+COVER IMAGE PROMPT REQUIREMENTS (FORMAT 3):
+- The prompt MUST be 150-250 words of rich, specific visual direction
+- Specify the visual style: photographic, editorial illustration, 3D render, flat design, watercolor, etc.
+- Describe exact composition: foreground subject, background elements, perspective, framing (wide/close-up/overhead)
+- Include the EXACT color palette from the newsletter (reference specific hex codes like #E91A44, #1A1A2E, etc.)
+- Describe the subject matter tied to the newsletter topic — make it conceptually relevant, not generic
+- Specify mood and lighting: warm golden hour, cool corporate blue, dramatic chiaroscuro, bright and airy, etc.
+- Include any text overlays: headline text, issue number, brand name — specify font style and placement
+- ALWAYS specify dimensions: 1200x600px email header banner, landscape orientation
+- DO NOT include generic stock photo descriptions — make every prompt unique and tied to the newsletter content
+- Think like a professional art director briefing a designer for a premium email campaign
 
 QUESTION FLOW:
 - Ask ONE question at a time. Provide 3-4 specific, helpful options.
@@ -48,7 +60,7 @@ IMPORTANT RULES:
 // ── Tool Configs ──
 const TOOL_CONFIGS = {
   newsletter: {
-    systemPrompt: `You are an elite newsletter copywriter and email designer working inside the PuerlyPersonal AI CEO platform. Your job is to help users create stunning, high-converting email newsletters.\n\n${SHARED_RULES}\n\nHTML REQUIREMENTS:\n- Generate a COMPLETE, standalone HTML email document with <!DOCTYPE html>, <html>, <head>, <body>\n- Use ONLY inline CSS styles — no <style> blocks, no external stylesheets, no <script> tags\n- Use table-based layout for email client compatibility\n- Make it visually stunning: clean typography, good whitespace, professional color palette\n- Include: branded header area, compelling headline, body sections with engaging copy, a prominent CTA button, footer with unsubscribe placeholder\n- Use a max-width of 600px centered layout (standard email width)\n- Default color scheme: clean white background, dark text (#333), accent color #E91A44 for CTA buttons and highlights\n- Write STELLAR copywriting: compelling headlines, engaging opening hooks, scannable body with subheadings, clear and urgent CTAs\n- Make the copy feel human, warm, and persuasive — not robotic or generic\n- The HTML must be production-ready email code that renders beautifully\n- If the user provides image URLs or data URIs, embed them directly in the HTML using <img> tags\n- Typical question flow: topic/angle → target audience → tone/voice → key CTA/goal\n\nCOVER IMAGE FLOW (newsletters only):\n- After generating a newsletter, ALWAYS follow up with a question asking: "Would you like me to generate a cover image for this newsletter?"\n- Provide 4 specific, creative cover image concepts based on the newsletter content as options, plus "No thanks, the newsletter looks great as is" as a 5th option\n- Each option should be descriptive (e.g. "A bold hero shot of [subject] with [brand colors] gradient overlay and the headline text")\n- When the user selects a cover image option, respond with FORMAT 3 (cover_image type) with an extremely detailed prompt\n- The prompt must specify: style, composition, exact colors from the newsletter, subject matter, mood, lighting, and any text to include\n- NEVER generate a cover image without asking first`,
+    systemPrompt: `You are an elite newsletter copywriter and email designer working inside the PuerlyPersonal AI CEO platform. Your job is to help users create stunning, high-converting email newsletters.\n\n${SHARED_RULES}\n\nHTML REQUIREMENTS:\n- Generate a COMPLETE, standalone HTML email document with <!DOCTYPE html>, <html>, <head>, <body>\n- Use ONLY inline CSS styles — no <style> blocks, no external stylesheets, no <script> tags\n- Use table-based layout for email client compatibility\n- Make it visually stunning: clean typography, good whitespace, professional color palette\n- Include: branded header area, compelling headline, body sections with engaging copy, a prominent CTA button, footer with unsubscribe placeholder\n- Use a max-width of 600px centered layout (standard email width)\n- Default color scheme: clean white background, dark text (#333), accent color #E91A44 for CTA buttons and highlights\n- Write STELLAR copywriting: compelling headlines, engaging opening hooks, scannable body with subheadings, clear and urgent CTAs\n- Make the copy feel human, warm, and persuasive — not robotic or generic\n- The HTML must be production-ready email code that renders beautifully\n- If the user provides image URLs or data URIs, embed them directly in the HTML using <img> tags\n- Typical question flow: topic/angle → target audience → tone/voice → key CTA/goal\n\nCOVER IMAGE FLOW (newsletters only):\n- When the user says "Now suggest 4 creative cover image options for this newsletter", respond with a FORMAT 1 question\n- Your question text should be: "Would you like me to generate a cover image for this newsletter? Here are 4 concepts inspired by your content:"\n- Provide exactly 4 creative, SPECIFIC cover image concepts as options — each one should be a vivid 1-2 sentence visual description tied to the newsletter topic, mentioning style (photographic/illustration/3D/etc.), key visual elements, and mood\n- Add a 5th option: "No thanks, the newsletter looks great as is"\n- Example options: "A cinematic wide-angle photo of [specific subject from newsletter] bathed in warm golden light, with bold sans-serif headline overlay in brand colors", "A sleek 3D render of [concept from newsletter] floating on a gradient from [brand color] to deep navy, modern and premium feel"\n- When the user selects a cover image option (not the 'No thanks' option), respond with FORMAT 3 (cover_image type) with a 150-250 word art-director-quality prompt\n- If the user says "No thanks" or similar, respond with a simple question asking if there is anything else they want to change\n- NEVER generate a cover image without asking first`,
     placeholder: 'Describe your newsletter idea...',
     ctaText: 'Ask the Newsletter AI to help you come up with ideas, edit your newsletter or even write one from scratch! Make sure to give it good context!',
     canvasTitle: 'Canvas',
@@ -1132,6 +1144,31 @@ function ToolTab({ config, activeTool, brandDna }) {
         const finalHtml = replaceImagePlaceholders(parsed.html, filesSnapshot);
         setCanvasHtml(finalHtml);
         setChatMessages((prev) => [...prev, { id: `msg-${Date.now()}-assistant`, role: 'assistant', text: parsed.summary || config.readyText }]);
+
+        // For newsletters, automatically ask about cover image generation
+        if (activeTool === 'newsletter') {
+          // Fire a follow-up AI call to get context-specific cover image suggestions
+          try {
+            const coverSuggestMsg = { role: 'user', content: 'Now suggest 4 creative cover image options for this newsletter.' };
+            const coverMessages = [...newMessages, assistantMsg, coverSuggestMsg];
+            const coverContent = await streamToolResponse(
+              coverMessages,
+              systemPrompt,
+              () => {},
+              abortRef.current.signal,
+              { searchMode: false },
+            );
+            const coverParsed = tryParseAIResponse(coverContent);
+            if (coverParsed?.type === 'question') {
+              // Add the hidden request + AI response to conversation history so the AI has context when user picks an option
+              setMessages((prev) => [...prev, coverSuggestMsg, { role: 'assistant', content: coverContent }]);
+              setCurrentQuestion({ text: coverParsed.text, options: coverParsed.options });
+              setChatMessages((prev) => [...prev, { id: `msg-${Date.now()}-cover-q`, role: 'assistant', text: coverParsed.text }]);
+            }
+          } catch {
+            // Cover image suggestion failed silently — not critical
+          }
+        }
       } else {
         // Fallback — show raw text
         setChatMessages((prev) => [...prev, { id: `msg-${Date.now()}-assistant`, role: 'assistant', text: fullContent.slice(0, 500) }]);
